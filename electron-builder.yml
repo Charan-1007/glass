@@ -16,7 +16,7 @@ publish:
 # Protocols configuration for deep linking
 protocols:
     name: PickleGlass Protocol
-    schemes: 
+    schemes:
         - pickleglass
 
 # List of files to be included in the app package
@@ -33,9 +33,9 @@ extraResources:
       to: out
 
 asarUnpack:
-    - "src/ui/assets/SystemAudioDump"
-    - "**/node_modules/sharp/**/*"
-    - "**/node_modules/@img/**/*"
+    - 'src/ui/assets/SystemAudioDump'
+    - '**/node_modules/sharp/**/*'
+    - '**/node_modules/@img/**/*'
 
 # Windows configuration
 win:
@@ -48,10 +48,10 @@ win:
     requestedExecutionLevel: asInvoker
     signAndEditExecutable: true
     cscLink: build\certs\glass-dev.pfx
-    cscKeyPassword: "${env.CSC_KEY_PASSWORD}"
+    cscKeyPassword: '${env.CSC_KEY_PASSWORD}'
     signtoolOptions:
-      certificateSubjectName: "Glass Dev Code Signing"
-    sign: false # Disable code signing for local builds
+        certificateSubjectName: 'Glass Dev Code Signing'
+    # To disable code signing, set env var CSC_IDENTITY_AUTO_DISCOVERY=false
 
 # NSIS installer configuration for Windows
 nsis:
@@ -75,7 +75,7 @@ mac:
     entitlements: entitlements.plist
     entitlementsInherit: entitlements.plist
     target:
-      - target: dmg
-        arch: universal
-      - target: zip
-        arch: universal
+        - target: dmg
+          arch: universal
+        - target: zip
+          arch: universal
