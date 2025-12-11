@@ -1,0 +1,14 @@
+[package]
+name = "libaec"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+aec-rs = { path = "../../", version = "1.0.0" }
+
+[lib]
+name = "aec"
+crate-type = ["cdylib", "staticlib"]
+
+[build-dependencies]
+cbindgen = "0.26.0"

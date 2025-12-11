@@ -1,0 +1,11 @@
+target/
+data/
+*.wav
+.DS_Store
+venv/
+__pycache__/
+*.dll
+*.dylib
+*.so
+*.h
+.DS_Store
