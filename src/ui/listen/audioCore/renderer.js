@@ -10,8 +10,16 @@ window.pickleGlass = {
     isLinux: listenCapture.isLinux,
     isMacOS: listenCapture.isMacOS,
     captureManualScreenshot: listenCapture.captureManualScreenshot,
-    getCurrentScreenshot: listenCapture.getCurrentScreenshot,
+    hasQueuedScreenshots: listenCapture.hasQueuedScreenshots,
+    clearScreenshotQueue: listenCapture.clearScreenshotQueue,
+    getScreenshotQueueSize: listenCapture.getScreenshotQueueSize,
 };
+
+// Also expose at window level for shortcut service access
+window.captureManualScreenshot = listenCapture.captureManualScreenshot;
+window.hasQueuedScreenshots = listenCapture.hasQueuedScreenshots;
+window.clearScreenshotQueue = listenCapture.clearScreenshotQueue;
+window.getScreenshotQueueSize = listenCapture.getScreenshotQueueSize;
 
 
 window.api.renderer.onChangeListenCaptureState((_event, { status }) => {

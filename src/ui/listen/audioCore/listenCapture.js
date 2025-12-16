@@ -47,6 +47,59 @@ let systemAudioBuffer = [];
 const MAX_SYSTEM_BUFFER_SIZE = 10;
 
 // ---------------------------
+// Screenshot Queue Functions
+// Note: The actual capture and queue management is done in main process (askService)
+// These are just wrappers that call the main process via IPC
+// ---------------------------
+
+/**
+ * Capture a manual screenshot (delegates to main process)
+ * The main process hides overlay windows, captures clean screenshot, and adds to queue
+ * Similar to Phantom Lens implementation
+ */
+async function captureManualScreenshot() {
+    if (window.api && window.api.listenCapture && window.api.listenCapture.captureManualScreenshot) {
+        const result = await window.api.listenCapture.captureManualScreenshot();
+        console.log(`[ListenCapture] Manual screenshot result:`, result);
+        return result;
+    } else {
+        console.error('[ListenCapture] IPC not available for screenshot capture');
+        return { success: false, error: 'IPC not available' };
+    }
+}
+
+/**
+ * Check if there are screenshots in the queue (via IPC)
+ */
+async function hasQueuedScreenshots() {
+    if (window.api && window.api.listenCapture && window.api.listenCapture.hasQueuedScreenshots) {
+        return await window.api.listenCapture.hasQueuedScreenshots();
+    }
+    return false;
+}
+
+/**
+ * Clear the screenshot queue (via IPC)
+ */
+async function clearScreenshotQueue() {
+    if (window.api && window.api.listenCapture && window.api.listenCapture.clearScreenshotQueue) {
+        await window.api.listenCapture.clearScreenshotQueue();
+        console.log('[ListenCapture] Screenshot queue cleared');
+    }
+}
+
+/**
+ * Get queue size (via IPC) - Note: This is async now
+ */
+async function getScreenshotQueueSize() {
+    if (window.api && window.api.listenCapture && window.api.listenCapture.hasQueuedScreenshots) {
+        const hasScreenshots = await window.api.listenCapture.hasQueuedScreenshots();
+        return hasScreenshots ? 1 : 0; // Approximate
+    }
+    return 0;
+}
+
+// ---------------------------
 // Utility helpers (exact from renderer.js)
 // ---------------------------
 function isVoiceActive(audioFloat32Array, threshold = 0.005) {
@@ -621,6 +674,11 @@ module.exports = {
     stopCapture,
     isLinux,
     isMacOS,
+    // Screenshot queue functions (these communicate with main process via IPC)
+    captureManualScreenshot,
+    hasQueuedScreenshots,
+    clearScreenshotQueue,
+    getScreenshotQueueSize,
 };
 
 // Expose functions to global scope for external access (exact from renderer.js)
@@ -629,4 +687,9 @@ if (typeof window !== 'undefined') {
     window.pickleGlass = window.pickleGlass || {};
     window.pickleGlass.startCapture = startCapture;
     window.pickleGlass.stopCapture = stopCapture;
+    // Expose screenshot queue functions globally
+    window.captureManualScreenshot = captureManualScreenshot;
+    window.hasQueuedScreenshots = hasQueuedScreenshots;
+    window.clearScreenshotQueue = clearScreenshotQueue;
+    window.getScreenshotQueueSize = getScreenshotQueueSize;
 } 

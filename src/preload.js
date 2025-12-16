@@ -292,9 +292,19 @@ contextBridge.exposeInMainWorld('api', {
     // Session Management
     isSessionActive: () => ipcRenderer.invoke('listen:isSessionActive'),
     
+    // Screenshot Queue Management (main process handles capture)
+    captureManualScreenshot: () => ipcRenderer.invoke('ask:captureManualScreenshot'),
+    getScreenshotQueue: () => ipcRenderer.invoke('ask:getScreenshotQueue'),
+    hasQueuedScreenshots: () => ipcRenderer.invoke('ask:hasQueuedScreenshots'),
+    clearScreenshotQueue: () => ipcRenderer.invoke('ask:clearScreenshotQueue'),
+    getScreenshotQueueSize: () => ipcRenderer.invoke('ask:getScreenshotQueueSize'),
+    addScreenshotToQueue: (screenshot) => ipcRenderer.invoke('ask:addScreenshotToQueue', screenshot),
+    
     // Listeners
     onSystemAudioData: (callback) => ipcRenderer.on('system-audio-data', callback),
-    removeOnSystemAudioData: (callback) => ipcRenderer.removeListener('system-audio-data', callback)
+    removeOnSystemAudioData: (callback) => ipcRenderer.removeListener('system-audio-data', callback),
+    onScreenshotCaptured: (callback) => ipcRenderer.on('screenshot-captured', callback),
+    removeOnScreenshotCaptured: (callback) => ipcRenderer.removeListener('screenshot-captured', callback)
   },
 
   // src/ui/listen/audioCore/renderer.js

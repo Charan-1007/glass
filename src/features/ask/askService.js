@@ -35,6 +35,141 @@ try {
 }
 let lastScreenshot = null;
 
+// ---------------------------
+// Screenshot Queue Management (for manual screenshots)
+// ---------------------------
+let screenshotQueue = [];
+const MAX_SCREENSHOT_QUEUE_SIZE = 10;
+
+/**
+ * Capture a manual screenshot using desktopCapturer (main process)
+ * This hides the overlay windows before capture to get a clean screenshot
+ * Similar to Phantom Lens implementation
+ */
+async function captureManualScreenshotToQueue() {
+    try {
+        const windowPool = getWindowPool();
+        const windowsToHide = [];
+        
+        // Hide all overlay windows before capture
+        if (windowPool) {
+            for (const [name, win] of windowPool.entries()) {
+                if (win && !win.isDestroyed() && win.isVisible()) {
+                    windowsToHide.push({ name, win });
+                    win.hide();
+                }
+            }
+        }
+        
+        // Wait for windows to be hidden
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Capture the screen using desktopCapturer
+        const sources = await desktopCapturer.getSources({
+            types: ['screen'],
+            thumbnailSize: {
+                width: 1920,
+                height: 1080,
+            },
+        });
+        
+        // Show windows again
+        for (const { win } of windowsToHide) {
+            if (win && !win.isDestroyed()) {
+                win.showInactive();
+            }
+        }
+        
+        if (sources.length === 0) {
+            console.error('[AskService] No screen sources available for manual screenshot');
+            return { success: false, error: 'No screen sources available' };
+        }
+        
+        const source = sources[0];
+        const buffer = source.thumbnail.toJPEG(80);
+        const base64 = buffer.toString('base64');
+        const size = source.thumbnail.getSize();
+        
+        // Add to queue
+        const screenshot = {
+            base64,
+            width: size.width,
+            height: size.height,
+            timestamp: Date.now(),
+        };
+        
+        screenshotQueue.push(screenshot);
+        
+        // Limit queue size
+        if (screenshotQueue.length > MAX_SCREENSHOT_QUEUE_SIZE) {
+            screenshotQueue = screenshotQueue.slice(-MAX_SCREENSHOT_QUEUE_SIZE);
+        }
+        
+        console.log(`[AskService] Manual screenshot captured and queued. Queue size: ${screenshotQueue.length}`);
+        
+        // Notify renderer about the capture (for visual feedback)
+        const mainWindow = windowPool?.get('main');
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('screenshot-captured', { queueSize: screenshotQueue.length });
+        }
+        
+        return { success: true, queueSize: screenshotQueue.length };
+    } catch (error) {
+        console.error('[AskService] Failed to capture manual screenshot:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+/**
+ * Add a screenshot to the queue (called from renderer via IPC)
+ */
+function addScreenshotToQueue(screenshot) {
+    screenshotQueue.push({
+        ...screenshot,
+        timestamp: Date.now(),
+    });
+    
+    // Limit queue size
+    if (screenshotQueue.length > MAX_SCREENSHOT_QUEUE_SIZE) {
+        screenshotQueue = screenshotQueue.slice(-MAX_SCREENSHOT_QUEUE_SIZE);
+    }
+    
+    console.log(`[AskService] Screenshot added to queue. Queue size: ${screenshotQueue.length}`);
+    return { success: true, queueSize: screenshotQueue.length };
+}
+
+/**
+ * Get and clear the screenshot queue
+ */
+function getAndClearScreenshotQueue() {
+    const queue = [...screenshotQueue];
+    screenshotQueue = [];
+    console.log(`[AskService] Retrieved and cleared ${queue.length} screenshots from queue`);
+    return queue;
+}
+
+/**
+ * Check if there are queued screenshots
+ */
+function hasQueuedScreenshots() {
+    return screenshotQueue.length > 0;
+}
+
+/**
+ * Clear the screenshot queue
+ */
+function clearScreenshotQueue() {
+    screenshotQueue = [];
+    console.log('[AskService] Screenshot queue cleared');
+}
+
+/**
+ * Get queue size
+ */
+function getScreenshotQueueSize() {
+    return screenshotQueue.length;
+}
+
 async function captureScreenshot(options = {}) {
     if (process.platform === 'darwin') {
         try {
@@ -249,28 +384,60 @@ class AskService {
             }
             console.log(`[AskService] Using model: ${modelInfo.model} for provider: ${modelInfo.provider}`);
 
-            const screenshotResult = await captureScreenshot({ quality: 'medium' });
-            const screenshotBase64 = screenshotResult.success ? screenshotResult.base64 : null;
+            // Check for queued screenshots first, otherwise capture current screen
+            let screenshotsToAnalyze = [];
+            let usingQueuedScreenshots = false;
+            
+            if (hasQueuedScreenshots()) {
+                // Get queued screenshots and clear the queue
+                screenshotsToAnalyze = getAndClearScreenshotQueue();
+                usingQueuedScreenshots = true;
+                console.log(`[AskService] Using ${screenshotsToAnalyze.length} queued screenshots for analysis`);
+            } else {
+                // Capture current screen
+                const screenshotResult = await captureScreenshot({ quality: 'medium' });
+                if (screenshotResult.success) {
+                    screenshotsToAnalyze = [{ base64: screenshotResult.base64, width: screenshotResult.width, height: screenshotResult.height }];
+                }
+                console.log('[AskService] Captured current screen for analysis');
+            }
 
             const conversationHistory = this._formatConversationForPrompt(conversationHistoryRaw);
 
-            const systemPrompt = getSystemPrompt('pickle_glass_analysis', conversationHistory, false);
+            // Use the appropriate system prompt based on whether we have queued screenshots
+            const systemPrompt = usingQueuedScreenshots && screenshotsToAnalyze.length > 0
+                ? getSystemPrompt('pickle_glass_screenshot_analysis', conversationHistory, false)
+                : getSystemPrompt('pickle_glass_analysis', conversationHistory, false);
+
+            // Build user message with appropriate prompt
+            let userText = userPrompt.trim();
+            if (usingQueuedScreenshots && screenshotsToAnalyze.length > 0) {
+                if (!userText) {
+                    userText = `Analyze the following ${screenshotsToAnalyze.length} screenshot(s). Identify the type of content:
+- If it's an MCQ (Multiple Choice Question), provide the correct answer with a clear explanation.
+- If it's a Coding question/problem, provide the complete solution code with explanation.
+- If it's neither, describe what you see and provide relevant insights.`;
+                }
+            }
 
             const messages = [
                 { role: 'system', content: systemPrompt },
                 {
                     role: 'user',
                     content: [
-                        { type: 'text', text: `User Request: ${userPrompt.trim()}` },
+                        { type: 'text', text: `User Request: ${userText}` },
                     ],
                 },
             ];
 
-            if (screenshotBase64) {
-                messages[1].content.push({
-                    type: 'image_url',
-                    image_url: { url: `data:image/jpeg;base64,${screenshotBase64}` },
-                });
+            // Add all screenshots to the message
+            for (const screenshot of screenshotsToAnalyze) {
+                if (screenshot.base64) {
+                    messages[1].content.push({
+                        type: 'image_url',
+                        image_url: { url: `data:image/jpeg;base64,${screenshot.base64}` },
+                    });
+                }
             }
             
             const streamingLLM = createStreamingLLM(modelInfo.provider, {
@@ -303,7 +470,7 @@ class AskService {
 
             } catch (multimodalError) {
                 // 멀티모달 요청이 실패했고 스크린샷이 포함되어 있다면 텍스트만으로 재시도
-                if (screenshotBase64 && this._isMultimodalError(multimodalError)) {
+                if (screenshotsToAnalyze.length > 0 && this._isMultimodalError(multimodalError)) {
                     console.log(`[AskService] Multimodal request failed, retrying with text-only: ${multimodalError.message}`);
                     
                     // 텍스트만으로 메시지 재구성
@@ -311,7 +478,7 @@ class AskService {
                         { role: 'system', content: systemPrompt },
                         {
                             role: 'user',
-                            content: `User Request: ${userPrompt.trim()}`
+                            content: `User Request: ${userText}`
                         }
                     ];
 
@@ -447,4 +614,21 @@ class AskService {
 
 const askService = new AskService();
 
-module.exports = askService;
+// Export both the service instance and the screenshot queue functions
+module.exports = {
+    // AskService instance methods (default export behavior)
+    sendMessage: (...args) => askService.sendMessage(...args),
+    toggleAskButton: (...args) => askService.toggleAskButton(...args),
+    closeAskWindow: (...args) => askService.closeAskWindow(...args),
+    
+    // Screenshot queue management functions
+    captureManualScreenshotToQueue,
+    addScreenshotToQueue,
+    getAndClearScreenshotQueue,
+    hasQueuedScreenshots,
+    clearScreenshotQueue,
+    getScreenshotQueueSize,
+    
+    // Also export the instance for direct access if needed
+    _instance: askService,
+};

@@ -84,6 +84,14 @@ module.exports = {
     ipcMain.handle('ask:toggleAskButton', async () => await askService.toggleAskButton());
     ipcMain.handle('ask:closeAskWindow',  async () => await askService.closeAskWindow());
     
+    // Screenshot Queue Management
+    ipcMain.handle('ask:captureManualScreenshot', async () => await askService.captureManualScreenshotToQueue());
+    ipcMain.handle('ask:getScreenshotQueue', async () => askService.getAndClearScreenshotQueue());
+    ipcMain.handle('ask:hasQueuedScreenshots', async () => askService.hasQueuedScreenshots());
+    ipcMain.handle('ask:clearScreenshotQueue', async () => askService.clearScreenshotQueue());
+    ipcMain.handle('ask:getScreenshotQueueSize', async () => askService.getScreenshotQueueSize());
+    ipcMain.handle('ask:addScreenshotToQueue', async (event, screenshot) => askService.addScreenshotToQueue(screenshot));
+    
     // Listen
     ipcMain.handle('listen:sendMicAudio', async (event, { data, mimeType }) => await listenService.handleSendMicAudioContent(data, mimeType));
     ipcMain.handle('listen:sendSystemAudio', async (event, { data, mimeType }) => {

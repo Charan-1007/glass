@@ -281,9 +281,15 @@ case 'scrollDown':
                     };
                     break;
                 case 'manualScreenshot':
-                    callback = () => {
-                        if(mainWindow && !mainWindow.isDestroyed()) {
-                             mainWindow.webContents.executeJavaScript('window.captureManualScreenshot && window.captureManualScreenshot();');
+                    callback = async () => {
+                        // Capture screenshot directly in main process (like Phantom Lens)
+                        // This hides windows, captures clean screenshot, and adds to queue
+                        const askService = require('../ask/askService');
+                        const result = await askService.captureManualScreenshotToQueue();
+                        if (result.success) {
+                            console.log(`[Shortcuts] Manual screenshot captured. Queue size: ${result.queueSize}`);
+                        } else {
+                            console.error(`[Shortcuts] Manual screenshot failed:`, result.error);
                         }
                     };
                     break;
