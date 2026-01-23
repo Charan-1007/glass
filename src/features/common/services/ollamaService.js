@@ -109,6 +109,9 @@ class OllamaService extends EventEmitter {
                 return { success: true, installed: true, running: false, models: [] };
             }
 
+            // Sync models to database when getting status
+            await this.syncState();
+
             const models = await this.getInstalledModels();
             return { success: true, installed: true, running: true, models };
         } catch (error) {
@@ -884,13 +887,18 @@ class OllamaService extends EventEmitter {
                 }
             }
             
-            // 모델 상태 DB 업데이트
+            // 모델 상태 DB 업데이트 (upsertModel을 사용하여 새 모델도 추가)
             if (isRunning && models.length > 0) {
                 for (const model of models) {
                     try {
                         const isLoaded = loadedModels.includes(model.name);
-                        // DB에는 installed 상태만 저장, loaded 상태는 메모리에서 관리
-                        await ollamaModelRepository.updateInstallStatus(model.name, true, false);
+                        // DB에 모델을 upsert (새 모델은 추가, 기존 모델은 업데이트)
+                        await ollamaModelRepository.upsertModel({
+                            name: model.name,
+                            size: model.size || 'Unknown',
+                            installed: true,
+                            installing: false
+                        });
                         
                         // 로드 상태를 인스턴스 변수에 저장
                         if (!this.modelLoadStatus) {
@@ -1309,6 +1317,9 @@ class OllamaService extends EventEmitter {
                 return { success: true, installed: true, running: false, models: [] };
             }
 
+            // Sync state to update the database with current installed models
+            await this.syncState();
+
             const models = await this.getAllModelsWithStatus();
             return { success: true, installed: true, running: true, models };
         } catch (error) {
@@ -1408,17 +1419,33 @@ class OllamaService extends EventEmitter {
         try {
             console.log(`[OllamaService] Starting model pull: ${modelName}`);
 
-            await ollamaModelRepository.updateInstallStatus(modelName, false, true);
+            // Use upsert to create new entry if it doesn't exist
+            await ollamaModelRepository.upsertModel({
+                name: modelName,
+                size: 'Unknown',
+                installed: false,
+                installing: true
+            });
 
             await this.pullModel(modelName);
 
-            await ollamaModelRepository.updateInstallStatus(modelName, true, false);
+            await ollamaModelRepository.upsertModel({
+                name: modelName,
+                size: 'Unknown',
+                installed: true,
+                installing: false
+            });
 
             console.log(`[OllamaService] Model ${modelName} pull successful`);
             return { success: true };
         } catch (error) {
             console.error('[OllamaService] Failed to pull model:', error);
-            await ollamaModelRepository.updateInstallStatus(modelName, false, false);
+            await ollamaModelRepository.upsertModel({
+                name: modelName,
+                size: 'Unknown',
+                installed: false,
+                installing: false
+            });
             // Emit error event - LocalAIManager가 처리
             this.emit('error', { 
                 errorType: 'model-pull-failed',

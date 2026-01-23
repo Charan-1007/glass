@@ -421,13 +421,17 @@ class ModelStateService extends EventEmitter {
         const hasLlmKey = Object.entries(apiKeyMap).some(([provider, key]) => {
             if (!key) return false;
             if (provider === 'whisper') return false; // whisper는 LLM 없음
+            // Ollama uses dynamic models - if we have a key ('local'), it means it's configured
+            if (provider === 'ollama') return true;
             return PROVIDERS[provider]?.llmModels?.length > 0;
         });
         // STT
         const hasSttKey = Object.entries(apiKeyMap).some(([provider, key]) => {
             if (!key) return false;
             if (provider === 'ollama') return false; // ollama는 STT 없음
-            return PROVIDERS[provider]?.sttModels?.length > 0 || provider === 'whisper';
+            // Whisper is a local STT provider - if we have a key ('local'), it means it's configured
+            if (provider === 'whisper') return true;
+            return PROVIDERS[provider]?.sttModels?.length > 0;
         });
         return hasLlmKey && hasSttKey;
     }
