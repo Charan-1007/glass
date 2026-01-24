@@ -888,7 +888,24 @@ class OllamaService extends EventEmitter {
             }
             
             // 모델 상태 DB 업데이트 (upsertModel을 사용하여 새 모델도 추가)
-            if (isRunning && models.length > 0) {
+            if (isRunning) {
+                // Get current model names from Ollama
+                const ollamaModelNames = models.map(m => m.name);
+                
+                // Remove models from DB that no longer exist in Ollama
+                try {
+                    const dbModels = await ollamaModelRepository.getInstalledModels();
+                    for (const dbModel of dbModels) {
+                        if (!ollamaModelNames.includes(dbModel.name)) {
+                            console.log(`[OllamaService] Removing deleted model from DB: ${dbModel.name}`);
+                            await ollamaModelRepository.deleteModel(dbModel.name);
+                        }
+                    }
+                } catch (cleanupError) {
+                    console.warn(`[OllamaService] Failed to cleanup deleted models:`, cleanupError);
+                }
+                
+                // Add/update models that exist in Ollama
                 for (const model of models) {
                     try {
                         const isLoaded = loadedModels.includes(model.name);
