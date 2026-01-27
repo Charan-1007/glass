@@ -280,6 +280,12 @@ class AskService {
     }
 
     async toggleAskButton(inputScreenOnly = false) {
+        // Guard: Discard new requests when LLM is busy (loading or streaming)
+        if (this.state.isLoading || this.state.isStreaming) {
+            console.log('[AskService] LLM is busy, discarding new request');
+            return;
+        }
+
         const askWindow = getWindowPool()?.get('ask');
 
         let shouldSendScreenOnly = false;
