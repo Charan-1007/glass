@@ -513,21 +513,38 @@ class AskService {
 
         } catch (error) {
             console.error('[AskService] Error during message processing:', error);
+            
+            // Generate user-friendly error message
+            let errorMessage = error.message || 'Unknown error occurred';
+            
+            // Check for common Ollama errors and provide helpful messages
+            if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('connect')) {
+                errorMessage = '❌ Cannot connect to Ollama.\n\nPlease ensure Ollama is running on your system.';
+            } else if (errorMessage.includes('rate limit') || errorMessage.includes('quota')) {
+                errorMessage = '⚠️ Rate limit exceeded.\n\nPlease wait a moment and try again.';
+            } else if (errorMessage.includes('model not found') || errorMessage.includes('does not exist')) {
+                errorMessage = '❌ Model not found.\n\nPlease ensure the selected model is installed in Ollama.\nYou can install it using: ollama pull <model-name>';
+            } else if (errorMessage.includes('timeout')) {
+                errorMessage = '⏱️ Request timeout.\n\nThe model may be overloaded. Please try again.';
+            } else if (errorMessage.includes('out of memory') || errorMessage.includes('OOM')) {
+                errorMessage = '💾 Out of memory.\n\nTry using a smaller model or close other applications.';
+            } else if (errorMessage.includes('aborted') || errorMessage.includes('cancelled')) {
+                errorMessage = '🚫 Request cancelled.';
+            } else {
+                // For unknown errors, show the original message
+                errorMessage = `❌ Error: ${errorMessage}`;
+            }
+            
             this.state = {
                 ...this.state,
                 isLoading: false,
                 isStreaming: false,
+                currentResponse: errorMessage,
                 showTextInput: true,
             };
             this._broadcastState();
 
-            const askWin = getWindowPool()?.get('ask');
-            if (askWin && !askWin.isDestroyed()) {
-                const streamError = error.message || 'Unknown error occurred';
-                askWin.webContents.send('ask-response-stream-error', { error: streamError });
-            }
-
-            return { success: false, error: error.message };
+            return { success: false, error: errorMessage };
         }
     }
 
@@ -579,9 +596,22 @@ class AskService {
                 console.log(`[AskService] Stream reading was intentionally cancelled. Reason: ${signal.reason}`);
             } else {
                 console.error('[AskService] Error while processing stream:', streamError);
-                if (askWin && !askWin.isDestroyed()) {
-                    askWin.webContents.send('ask-response-stream-error', { error: streamError.message });
+                
+                // Generate user-friendly error message
+                let errorMessage = streamError.message || 'Unknown streaming error';
+                
+                if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('connect')) {
+                    errorMessage = '❌ Lost connection to Ollama.\n\nPlease check if Ollama is still running.';
+                } else if (errorMessage.includes('timeout')) {
+                    errorMessage = '⏱️ Streaming timeout.\n\nThe response took too long. Please try again.';
+                } else {
+                    errorMessage = `❌ Streaming error: ${errorMessage}`;
                 }
+                
+                // Display error in the response area
+                fullResponse += `\n\n${errorMessage}`;
+                this.state.currentResponse = fullResponse;
+                this._broadcastState();
             }
         } finally {
             this.state.isStreaming = false;
