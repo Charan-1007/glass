@@ -378,6 +378,46 @@ export class SettingsView extends LitElement {
             flex-direction: column;
             gap: 10px;
         }
+        .accordion-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            padding: 6px 4px;
+            border-radius: 6px;
+            transition: background 0.15s ease;
+        }
+        .accordion-header:hover {
+            background: rgba(255, 255, 255, 0.06);
+        }
+        .accordion-title {
+            font-size: 11px;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.85);
+        }
+        .accordion-arrow {
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.5);
+            transition: transform 0.2s ease;
+        }
+        .accordion-arrow.open {
+            transform: rotate(90deg);
+        }
+        .accordion-content {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            overflow: hidden;
+            max-height: 0;
+            opacity: 0;
+            transition: max-height 0.3s ease, opacity 0.2s ease, padding 0.2s ease;
+            padding: 0;
+        }
+        .accordion-content.open {
+            max-height: 1000px;
+            opacity: 1;
+            padding-top: 8px;
+        }
         .provider-key-group, .model-select-group {
             display: flex;
             flex-direction: column;
@@ -505,6 +545,7 @@ export class SettingsView extends LitElement {
         installingModels: { type: Object, state: true },
         // Whisper related properties
         whisperModels: { type: Array, state: true },
+        showApiKeys: { type: Boolean, state: true },
     };
     //////// after_modelStateService ////////
 
@@ -652,13 +693,9 @@ export class SettingsView extends LitElement {
 
 
     async handleSaveKey(provider) {
-        const input = this.shadowRoot.querySelector(`#key-input-${provider}`);
-        if (!input) return;
-        const key = input.value;
-        
         // For Ollama, we need to ensure it's ready first
         if (provider === 'ollama') {
-        this.saving = true;
+            this.saving = true;
             
             // First ensure Ollama is installed and running
             const ensureResult = await window.api.settingsView.ensureOllamaReady();
@@ -694,6 +731,10 @@ export class SettingsView extends LitElement {
             this.saving = false;
             return;
         }
+
+        const input = this.shadowRoot.querySelector(`#key-input-${provider}`);
+        if (!input) return;
+        const key = input.value;
         
         // For other providers, use the normal flow
         this.saving = true;
@@ -1193,6 +1234,11 @@ export class SettingsView extends LitElement {
 
         const apiKeyManagementHTML = html`
             <div class="api-key-section">
+                <div class="accordion-header" @click=${() => { this.showApiKeys = !this.showApiKeys; }}>
+                    <span class="accordion-title">API Keys</span>
+                    <span class="accordion-arrow ${this.showApiKeys ? 'open' : ''}">▶</span>
+                </div>
+                <div class="accordion-content ${this.showApiKeys ? 'open' : ''}">
                 ${Object.entries(this.providerConfig)
                     .filter(([id, config]) => !id.includes('-glass'))
                     .map(([id, config]) => {
@@ -1263,6 +1309,7 @@ export class SettingsView extends LitElement {
                         </div>
                         `;
                     })}
+                </div>
             </div>
         `;
         
@@ -1387,55 +1434,7 @@ export class SettingsView extends LitElement {
                     `)}
                 </div>
 
-                <div class="preset-section">
-                    <div class="preset-header">
-                        <span class="preset-title">
-                            My Presets
-                            <span class="preset-count">(${this.presets.filter(p => p.is_default === 0).length})</span>
-                        </span>
-                        <span class="preset-toggle" @click=${this.togglePresets}>
-                            ${this.showPresets ? '▼' : '▶'}
-                        </span>
-                    </div>
-                    
-                    <div class="preset-list ${this.showPresets ? '' : 'hidden'}">
-                        ${this.presets.filter(p => p.is_default === 0).length === 0 ? html`
-                            <div class="no-presets-message">
-                                No custom presets yet.<br>
-                                <span class="web-link" @click=${this.handlePersonalize}>
-                                    Create your first preset
-                                </span>
-                            </div>
-                        ` : this.presets.filter(p => p.is_default === 0).map(preset => html`
-                            <div class="preset-item ${this.selectedPreset?.id === preset.id ? 'selected' : ''}"
-                                 @click=${() => this.handlePresetSelect(preset)}>
-                                <span class="preset-name">${preset.title}</span>
-                                ${this.selectedPreset?.id === preset.id ? html`<span class="preset-status">Selected</span>` : ''}
-                            </div>
-                        `)}
-                    </div>
-                </div>
-
                 <div class="buttons-section">
-                    <button class="settings-button full-width" @click=${this.handlePersonalize}>
-                        <span>Personalize / Meeting Notes</span>
-                    </button>
-                    <button class="settings-button full-width" @click=${this.handleToggleAutoUpdate} ?disabled=${this.autoUpdateLoading}>
-                        <span>Automatic Updates: ${this.autoUpdateEnabled ? 'On' : 'Off'}</span>
-                    </button>
-                    
-                    <div class="move-buttons">
-                        <button class="settings-button half-width" @click=${this.handleMoveLeft}>
-                            <span>← Move</span>
-                        </button>
-                        <button class="settings-button half-width" @click=${this.handleMoveRight}>
-                            <span>Move →</span>
-                        </button>
-                    </div>
-                    
-                    <button class="settings-button full-width" @click=${this.handleToggleInvisibility}>
-                        <span>${this.isContentProtectionOn ? 'Disable Invisibility' : 'Enable Invisibility'}</span>
-                    </button>
                     
                     <div class="bottom-buttons">
                         ${this.firebaseUser

@@ -124,6 +124,13 @@ class OllamaService extends EventEmitter {
         if (this.getPlatform() === 'darwin') {
             return '/Applications/Ollama.app/Contents/Resources/ollama';
         }
+        // Use full path on Windows to avoid needing shell: true (which opens a visible window)
+        const path = require('path');
+        const localPrograms = path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Ollama', 'ollama.exe');
+        const fs = require('fs');
+        if (fs.existsSync(localPrograms)) {
+            return localPrograms;
+        }
         return 'ollama';
     }
 
@@ -166,7 +173,17 @@ class OllamaService extends EventEmitter {
                     return !!ollamaPath;
                 }
             } else {
-                const ollamaPath = await this.checkCommand(this.getOllamaCliPath());
+                // On Windows, first check the known install path directly
+                const cliPath = this.getOllamaCliPath();
+                if (cliPath !== 'ollama') {
+                    // Full path returned - check if file exists
+                    const fsSync = require('fs');
+                    if (fsSync.existsSync(cliPath)) {
+                        return true;
+                    }
+                }
+                // Fall back to checking PATH
+                const ollamaPath = await this.checkCommand('ollama');
                 return !!ollamaPath;
             }
         } catch (error) {
@@ -214,7 +231,7 @@ class OllamaService extends EventEmitter {
                 spawn(this.getOllamaCliPath(), ['serve'], {
                     detached: true,
                     stdio: 'ignore',
-                    shell: platform === 'win32'
+                    windowsHide: true
                 }).unref();
                 await this.waitForService(() => this.isServiceRunning());
                 return true;
@@ -1169,13 +1186,8 @@ class OllamaService extends EventEmitter {
         this._clearWarmUpCache();
         this.stopPeriodicSync();
         
-        // 프로세스 종료
-        const isRunning = await this.isServiceRunning();
-        if (!isRunning) {
-            console.log('[OllamaService] Service not running, nothing to shutdown');
-            return true;
-        }
-
+        // Always attempt the platform kill even if the health-check says "not running".
+        // The HTTP check can be flaky while the OS process is still alive.
         const platform = this.getPlatform();
         
         try {
@@ -1245,21 +1257,50 @@ class OllamaService extends EventEmitter {
     }
 
     async shutdownWindows(force) {
+        const spawnOpts = { windowsHide: true };
+
+        // Kill the Ollama tray / background app first so it doesn't restart the server
         try {
-            // Try to stop the service gracefully
-            await spawnAsync('taskkill', ['/IM', 'ollama.exe', '/T']);
-            console.log('[OllamaService] Ollama process terminated on Windows');
-            return true;
+            await spawnAsync('taskkill', ['/IM', 'ollama app.exe', '/F', '/T'], spawnOpts);
+            console.log('[OllamaService] Ollama tray app terminated');
+        } catch (_) {
+            // Tray app may not be running – that's OK
+        }
+
+        // Now kill the server process
+        try {
+            if (!force) {
+                await spawnAsync('taskkill', ['/IM', 'ollama.exe', '/T'], spawnOpts);
+            } else {
+                await spawnAsync('taskkill', ['/IM', 'ollama.exe', '/F', '/T'], spawnOpts);
+            }
+            console.log('[OllamaService] Ollama server process terminated on Windows');
         } catch (error) {
             console.log('[OllamaService] Standard termination failed, trying force kill');
             try {
-                await spawnAsync('taskkill', ['/IM', 'ollama.exe', '/F', '/T']);
-                return true;
+                await spawnAsync('taskkill', ['/IM', 'ollama.exe', '/F', '/T'], spawnOpts);
+                console.log('[OllamaService] Ollama server force-killed on Windows');
             } catch (killError) {
                 console.error('[OllamaService] Failed to force kill Ollama on Windows:', killError);
                 return false;
             }
         }
+
+        // Also kill any lingering model-runner processes
+        try {
+            await spawnAsync('taskkill', ['/IM', 'ollama_llama_server.exe', '/F', '/T'], spawnOpts);
+        } catch (_) { /* may not exist */ }
+
+        // Wait briefly then verify
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        const stillRunning = await this.isServiceRunning();
+        if (stillRunning) {
+            console.warn('[OllamaService] Ollama still running after shutdown attempt');
+            return false;
+        }
+
+        console.log('[OllamaService] Ollama shutdown verified on Windows');
+        return true;
     }
 
     async shutdownLinux(force) {
@@ -1401,7 +1442,12 @@ class OllamaService extends EventEmitter {
 
     async handleEnsureReady() {
         try {
-            if (await this.isInstalled() && !await this.isServiceRunning()) {
+            const installed = await this.isInstalled();
+            if (!installed) {
+                console.log('[OllamaService] Ollama is not installed');
+                return { success: false, error: 'Ollama is not installed. Please install it from https://ollama.com' };
+            }
+            if (!await this.isServiceRunning()) {
                 console.log('[OllamaService] Ollama installed but not running, starting service...');
                 await this.startService();
             }
