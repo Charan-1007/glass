@@ -1093,6 +1093,7 @@ export class SettingsView extends LitElement {
     }
 
     handleMouseLeave = () => {
+        this.showApiKeys = false;
         window.api.settingsView.hideSettingsWindow();
     }
 
