@@ -12,6 +12,7 @@ const askService = require('../features/ask/askService');
 const listenService = require('../features/listen/listenService');
 const permissionService = require('../features/common/services/permissionService');
 const encryptionService = require('../features/common/services/encryptionService');
+const copilotAuthService = require('../features/common/services/copilotAuthService');
 
 module.exports = {
   // Renderer로부터의 요청을 수신하고 서비스로 전달
@@ -77,6 +78,33 @@ module.exports = {
     ipcMain.handle('ollama:auto-warm-up', async () => await ollamaService.handleAutoWarmUp());
     ipcMain.handle('ollama:get-warm-up-status', async () => await ollamaService.handleGetWarmUpStatus());
     ipcMain.handle('ollama:shutdown', async (event, force = false) => await ollamaService.handleShutdown(force));
+
+    // Copilot
+    ipcMain.handle('copilot:login', async () => {
+        const result = await copilotAuthService.login();
+        if (result.success) {
+            // Store the GitHub token as the Copilot "API key" so modelStateService sees it
+            const token = copilotAuthService.getToken();
+            try {
+                await modelStateService.setApiKey('copilot', token);
+            } catch (e) {
+                console.error('[FeatureBridge] Failed to store Copilot key:', e);
+            }
+        }
+        return result;
+    });
+    ipcMain.handle('copilot:logout', async () => {
+        await copilotAuthService.logout();
+        await modelStateService.handleRemoveApiKey('copilot');
+        return { success: true };
+    });
+    ipcMain.handle('copilot:get-status', async () => await copilotAuthService.getStatus());
+
+    // Clipboard
+    ipcMain.handle('clipboard:read-text', () => {
+        const { clipboard } = require('electron');
+        return clipboard.readText();
+    });
 
     // Ask
     ipcMain.handle('ask:sendQuestionFromAsk', async (event, userPrompt) => await askService.sendMessage(userPrompt));

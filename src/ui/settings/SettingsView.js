@@ -546,6 +546,9 @@ export class SettingsView extends LitElement {
         // Whisper related properties
         whisperModels: { type: Array, state: true },
         showApiKeys: { type: Boolean, state: true },
+        // Copilot related properties
+        copilotStatus: { type: Object, state: true },
+        copilotAuthPending: { type: Boolean, state: true },
     };
     //////// after_modelStateService ////////
 
@@ -575,6 +578,9 @@ export class SettingsView extends LitElement {
         // Whisper related
         this.whisperModels = [];
         this.whisperProgressTracker = null; // Will be initialized when needed
+        // Copilot related
+        this.copilotStatus = { loggedIn: false, user: null };
+        this.copilotAuthPending = false;
         this.handleUsePicklesKey = this.handleUsePicklesKey.bind(this)
         this.autoUpdateEnabled = true;
         this.autoUpdateLoading = true;
@@ -639,6 +645,16 @@ export class SettingsView extends LitElement {
                         });
                     }
                 }
+            }
+
+            // Load Copilot status
+            try {
+                const copilotResult = await window.api.settingsView.copilotGetStatus();
+                if (copilotResult) {
+                    this.copilotStatus = { loggedIn: copilotResult.loggedIn, user: copilotResult.user };
+                }
+            } catch (e) {
+                console.error('Error loading Copilot status:', e);
             }
             
             // Trigger UI update
@@ -1218,6 +1234,57 @@ export class SettingsView extends LitElement {
         }
     }
 
+    // ── Copilot auth handlers ─────────────────────────────────────
+
+    async handleCopilotLogin() {
+        if (!window.api || this.copilotAuthPending) return;
+
+        this.copilotAuthPending = true;
+        this.requestUpdate();
+
+        try {
+            const result = await window.api.settingsView.copilotLogin();
+
+            if (result.success) {
+                console.log('[SettingsView] Copilot login succeeded');
+            } else {
+                console.error('[SettingsView] Copilot login failed:', result.error);
+            }
+
+            // Refresh regardless — status/models may have changed
+            await this.refreshCopilotStatus();
+            await this.refreshModelData();
+        } catch (error) {
+            console.error('[SettingsView] Error during Copilot login:', error);
+        } finally {
+            this.copilotAuthPending = false;
+            this.requestUpdate();
+        }
+    }
+
+    async handleCopilotLogout() {
+        if (!window.api) return;
+
+        try {
+            await window.api.settingsView.copilotLogout();
+            this.copilotStatus = { loggedIn: false, user: null };
+            await this.refreshModelData();
+        } catch (error) {
+            console.error('[SettingsView] Error during Copilot logout:', error);
+        }
+    }
+
+    async refreshCopilotStatus() {
+        try {
+            const result = await window.api.settingsView.copilotGetStatus();
+            if (result) {
+                this.copilotStatus = { loggedIn: result.loggedIn, user: result.user };
+            }
+        } catch (e) {
+            console.error('[SettingsView] Error refreshing Copilot status:', e);
+        }
+    }
+
     //////// after_modelStateService ////////
     render() {
         if (this.isLoading) {
@@ -1290,6 +1357,37 @@ export class SettingsView extends LitElement {
                                         <button class="settings-button full-width" @click=${() => this.handleSaveKey(id)}>
                                             Enable Whisper STT
                                         </button>
+                                    `}
+                                </div>
+                            `;
+                        }
+
+                        if (id === 'copilot') {
+                            // GitHub Copilot — sign-in / sign-out UI
+                            return html`
+                                <div class="provider-key-group">
+                                    <label>${config.name}</label>
+                                    ${this.copilotStatus.loggedIn ? html`
+                                        <div style="padding: 8px; background: rgba(0,255,0,0.1); border-radius: 4px; font-size: 11px; color: rgba(0,255,0,0.8); margin-bottom: 8px;">
+                                            ✓ Signed in as ${this.copilotStatus.user?.login || 'GitHub user'}
+                                        </div>
+                                        <button class="settings-button full-width danger" @click=${() => this.handleCopilotLogout()}>
+                                            Sign Out
+                                        </button>
+                                    ` : html`
+                                        <div style="padding: 8px; background: rgba(100,149,237,0.15); border-radius: 4px; font-size: 11px; color: rgba(100,149,237,0.9); margin-bottom: 8px;">
+                                            Sign in with GitHub to use Copilot models
+                                        </div>
+                                        <button class="settings-button full-width" 
+                                                @click=${() => this.handleCopilotLogin()}
+                                                ?disabled=${this.copilotAuthPending}>
+                                            ${this.copilotAuthPending ? 'Waiting for GitHub…' : 'Sign in with GitHub'}
+                                        </button>
+                                        ${this.copilotAuthPending ? html`
+                                            <div style="padding: 6px; font-size: 10px; color: rgba(255,255,255,0.5); text-align: center;">
+                                                Code copied to clipboard — complete sign-in in your browser
+                                            </div>
+                                        ` : ''}
                                     `}
                                 </div>
                             `;

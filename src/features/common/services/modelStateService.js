@@ -292,6 +292,8 @@ class ModelStateService extends EventEmitter {
             const installedModels = ollamaModelRepository.getInstalledModels();
             if (installedModels.some(m => m.name === modelId)) return 'ollama';
         }
+        // Copilot models are dynamic — match by prefix
+        if (typeof modelId === 'string' && modelId.startsWith('copilot:')) return 'copilot';
         return null;
     }
 
@@ -345,6 +347,14 @@ class ModelStateService extends EventEmitter {
             if (providerId === 'ollama' && type === 'llm') {
                 const installed = ollamaModelRepository.getInstalledModels();
                 available.push(...installed.map(m => ({ id: m.name, name: m.name })));
+            } else if (providerId === 'copilot' && type === 'llm') {
+                try {
+                    const { fetchModels } = require('../ai/providers/copilot');
+                    const copilotModels = await fetchModels(setting.api_key);
+                    available.push(...copilotModels);
+                } catch (err) {
+                    console.warn('[ModelStateService] Failed to fetch Copilot models:', err.message);
+                }
             } else if (PROVIDERS[providerId]?.[modelListKey]) {
                 available.push(...PROVIDERS[providerId][modelListKey]);
             }

@@ -14,6 +14,9 @@ export class AskView extends LitElement {
         headerText: { type: String },
         headerAnimating: { type: Boolean },
         isStreaming: { type: Boolean },
+        availableModels: { type: Array },
+        selectedModel: { type: String },
+        showModelDropdown: { type: Boolean },
     };
 
     static styles = css`
@@ -658,6 +661,97 @@ export class AskView extends LitElement {
             background: transparent !important;
         }
 
+        /* ── Model pill selector ────────────────────── */
+        .model-pill {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 11px;
+            font-family: 'Helvetica Neue', sans-serif;
+            font-weight: 500;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background 0.15s, border-color 0.15s;
+            position: relative;
+            user-select: none;
+            width: 120px;
+            height: 28px;
+            box-sizing: border-box;
+            flex-shrink: 0;
+        }
+        .model-pill:hover {
+            background: rgba(255, 255, 255, 0.14);
+            border-color: rgba(255, 255, 255, 0.22);
+        }
+        .model-pill .pill-label {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .model-pill .pill-chevron {
+            transition: transform 0.2s;
+        }
+        .model-pill.open .pill-chevron {
+            transform: rotate(180deg);
+        }
+        .model-dropdown {
+            position: absolute;
+            bottom: calc(100% + 6px);
+            left: 0;
+            min-width: 180px;
+            max-height: 220px;
+            overflow-y: auto;
+            background: rgba(28, 28, 30, 0.96);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 10px;
+            padding: 4px;
+            z-index: 100;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+        }
+        .model-dropdown.hidden {
+            display: none;
+        }
+        .model-option {
+            display: flex;
+            align-items: center;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-family: 'Helvetica Neue', sans-serif;
+            color: rgba(255, 255, 255, 0.8);
+            cursor: pointer;
+            transition: background 0.12s;
+        }
+        .model-option:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .model-option.active {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.12);
+        }
+        .model-option .check-mark {
+            width: 14px;
+            margin-right: 6px;
+            flex-shrink: 0;
+            text-align: center;
+            font-size: 11px;
+        }
+        .model-dropdown::-webkit-scrollbar {
+            width: 4px;
+        }
+        .model-dropdown::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.15);
+            border-radius: 2px;
+        }
+
         .submit-btn,
         .clear-btn {
             display: flex;
@@ -739,6 +833,9 @@ export class AskView extends LitElement {
         this.headerText = 'AI Response';
         this.headerAnimating = false;
         this.isStreaming = false;
+        this.availableModels = [];
+        this.selectedModel = '';
+        this.showModelDropdown = false;
 
         this.marked = null;
         this.hljs = null;
@@ -758,6 +855,7 @@ export class AskView extends LitElement {
         this.handleScroll = this.handleScroll.bind(this);
         this.handleCloseAskWindow = this.handleCloseAskWindow.bind(this);
         this.handleCloseIfNoContent = this.handleCloseIfNoContent.bind(this);
+        this.handleDocumentClick = this.handleDocumentClick.bind(this);
 
         this.loadLibraries();
 
@@ -771,6 +869,10 @@ export class AskView extends LitElement {
         console.log('📱 AskView connectedCallback - IPC 이벤트 리스너 설정');
 
         document.addEventListener('keydown', this.handleEscKey);
+        document.addEventListener('click', this.handleDocumentClick);
+
+        // Load available models for the pill selector
+        this.loadAvailableModels();
 
         this.resizeObserver = new ResizeObserver(entries => {
             for (const entry of entries) {
@@ -821,6 +923,12 @@ export class AskView extends LitElement {
                     }
                 }
             });
+
+            // Sync pill model selector when settings change from another window
+            window.api.askView.onSettingsUpdated(() => {
+                this.loadAvailableModels();
+            });
+
             console.log('AskView: IPC 이벤트 리스너 등록 완료');
         }
     }
@@ -832,6 +940,7 @@ export class AskView extends LitElement {
         console.log('📱 AskView disconnectedCallback - IPC 이벤트 리스너 제거');
 
         document.removeEventListener('keydown', this.handleEscKey);
+        document.removeEventListener('click', this.handleDocumentClick);
 
         if (this.copyTimeout) {
             clearTimeout(this.copyTimeout);
@@ -852,6 +961,7 @@ export class AskView extends LitElement {
             window.api.askView.removeOnShowTextInput(this.handleShowTextInput);
             window.api.askView.removeOnScrollResponseUp(this.handleScroll);
             window.api.askView.removeOnScrollResponseDown(this.handleScroll);
+            window.api.askView.removeOnSettingsUpdated(this.loadAvailableModels);
             console.log('✅ AskView: IPC 이벤트 리스너 제거 필요');
         }
     }
@@ -1419,6 +1529,18 @@ export class AskView extends LitElement {
 
                 <!-- Text Input Container -->
                 <div class="text-input-container ${!hasResponse ? 'no-response' : ''} ${!this.showTextInput ? 'hidden' : ''}">
+                    <div class="model-pill ${this.showModelDropdown ? 'open' : ''}" @click=${this.toggleModelDropdown}>
+                        <span class="pill-label">${this.getModelDisplayName(this.selectedModel)}</span>
+                        <svg class="pill-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
+                        <div class="model-dropdown ${this.showModelDropdown ? '' : 'hidden'}">
+                            ${(this.availableModels || []).map(m => html`
+                                <div class="model-option ${m.id === this.selectedModel ? 'active' : ''}" @click=${(e) => this.handleModelSelect(e, m.id)}>
+                                    <span class="check-mark">${m.id === this.selectedModel ? '✓' : ''}</span>
+                                    <span>${m.name || m.id}</span>
+                                </div>
+                            `)}
+                        </div>
+                    </div>
                     <input
                         type="text"
                         id="textInput"
@@ -1433,6 +1555,60 @@ export class AskView extends LitElement {
                 </div>
             </div>
         `;
+    }
+
+    // ── Model Pill Selector ────────────────────────────────────────
+
+    async loadAvailableModels() {
+        if (!window.api) return;
+        try {
+            const [models, selected] = await Promise.all([
+                window.api.askView.getAvailableModels({ type: 'llm' }),
+                window.api.askView.getSelectedModels(),
+            ]);
+            this.availableModels = models || [];
+            this.selectedModel = selected?.llm || (models?.[0]?.id ?? '');
+        } catch (err) {
+            console.warn('[AskView] Failed to load models:', err);
+        }
+    }
+
+    getModelDisplayName(modelId) {
+        if (!modelId) return 'Model';
+        const m = (this.availableModels || []).find(x => x.id === modelId);
+        if (m?.name) return m.name;
+        // Strip provider prefix for display  (copilot:gpt-4o → gpt-4o)
+        const short = modelId.includes(':') ? modelId.split(':').pop() : modelId;
+        return short || 'Model';
+    }
+
+    toggleModelDropdown(e) {
+        e.stopPropagation();
+        this.showModelDropdown = !this.showModelDropdown;
+    }
+
+    async handleModelSelect(e, modelId) {
+        e.stopPropagation();
+        if (modelId === this.selectedModel) {
+            this.showModelDropdown = false;
+            return;
+        }
+        this.selectedModel = modelId;
+        this.showModelDropdown = false;
+        if (window.api) {
+            try {
+                await window.api.askView.setSelectedModel({ type: 'llm', modelId });
+                console.log(`[AskView] Switched model to ${modelId}`);
+            } catch (err) {
+                console.warn('[AskView] Failed to set model:', err);
+            }
+        }
+    }
+
+    handleDocumentClick() {
+        if (this.showModelDropdown) {
+            this.showModelDropdown = false;
+        }
     }
 
     // Dynamically resize the BrowserWindow to fit current content

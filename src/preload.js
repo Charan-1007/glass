@@ -2,6 +2,11 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
+  // Clipboard access (via main process IPC)
+  clipboard: {
+    readText: () => ipcRenderer.invoke('clipboard:read-text'),
+  },
+
   // Platform information for renderer processes
   platform: {
     isLinux: process.platform === 'linux',
@@ -153,6 +158,11 @@ contextBridge.exposeInMainWorld('api', {
     // Message Handling
     sendMessage: (text) => ipcRenderer.invoke('ask:sendQuestionFromAsk', text),
 
+    // Model Selection
+    getAvailableModels: (type) => ipcRenderer.invoke('model:get-available-models', type),
+    getSelectedModels: () => ipcRenderer.invoke('model:get-selected-models'),
+    setSelectedModel: (data) => ipcRenderer.invoke('model:set-selected-model', data),
+
     // Listeners
     onAskStateUpdate: (callback) => ipcRenderer.on('ask:stateUpdate', callback),
     removeOnAskStateUpdate: (callback) => ipcRenderer.removeListener('ask:stateUpdate', callback),
@@ -167,7 +177,11 @@ contextBridge.exposeInMainWorld('api', {
     onScrollResponseUp: (callback) => ipcRenderer.on('aks:scrollResponseUp', callback),
     removeOnScrollResponseUp: (callback) => ipcRenderer.removeListener('aks:scrollResponseUp', callback),
     onScrollResponseDown: (callback) => ipcRenderer.on('aks:scrollResponseDown', callback),
-    removeOnScrollResponseDown: (callback) => ipcRenderer.removeListener('aks:scrollResponseDown', callback)
+    removeOnScrollResponseDown: (callback) => ipcRenderer.removeListener('aks:scrollResponseDown', callback),
+
+    // Model sync — fired when model selection changes from settings or other windows
+    onSettingsUpdated: (callback) => ipcRenderer.on('settings-updated', callback),
+    removeOnSettingsUpdated: (callback) => ipcRenderer.removeListener('settings-updated', callback)
   },
 
   // src/ui/listen/ListenView.js
@@ -221,6 +235,11 @@ contextBridge.exposeInMainWorld('api', {
     getOllamaStatus: () => ipcRenderer.invoke('ollama:get-status'),
     ensureOllamaReady: () => ipcRenderer.invoke('ollama:ensure-ready'),
     shutdownOllama: (graceful) => ipcRenderer.invoke('ollama:shutdown', graceful),
+    
+    // Copilot Management
+    copilotLogin: () => ipcRenderer.invoke('copilot:login'),
+    copilotLogout: () => ipcRenderer.invoke('copilot:logout'),
+    copilotGetStatus: () => ipcRenderer.invoke('copilot:get-status'),
     
     // Whisper Management
     getWhisperInstalledModels: () => ipcRenderer.invoke('whisper:get-installed-models'),

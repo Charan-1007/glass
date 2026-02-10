@@ -93,10 +93,17 @@ const PROVIDERS = {
           { id: 'whisper-medium', name: 'Whisper Medium (769M)' },
       ],
   },
+  'copilot': {
+      name: 'GitHub Copilot',
+      handler: () => require("./providers/copilot"),
+      llmModels: [],   // populated dynamically via fetchModels()
+      sttModels: [],
+  },
 };
 
 function sanitizeModelId(model) {
-  return (typeof model === 'string') ? model.replace(/-glass$/, '') : model;
+  if (typeof model !== 'string') return model;
+  return model.replace(/-glass$/, '').replace(/^copilot:/, '');
 }
 
 function createSTT(provider, opts) {
@@ -158,7 +165,8 @@ function getProviderClass(providerId) {
         'gemini': 'GeminiProvider',
         'deepgram': 'DeepgramProvider',
         'ollama': 'OllamaProvider',
-        'whisper': 'WhisperProvider'
+        'whisper': 'WhisperProvider',
+        'copilot': 'CopilotProvider'
     };
     
     const className = classNameMap[actualProviderId];
