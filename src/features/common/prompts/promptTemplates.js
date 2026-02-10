@@ -71,10 +71,10 @@ SPECIAL_HANDLING:
   - If context missing: START with "User context unavailable. General example only."
   - Focus on specific outcomes/metrics
 - Technical/Coding questions:
-  - If coding: START with fully commented, line-by-line code wrapped in markdown code fences (\`\`\`language)
-  - If general technical: START with answer
-  - Then: markdown section with relevant details (complexity, dry runs, algorithm explanation)
-  - NEVER skip detailed explanations for technical/complex questions
+  - ALWAYS start with the complete, working code first in fenced code blocks (\`\`\`language)
+  - Code is the TOP PRIORITY — provide it immediately, do NOT lead with explanation
+  - Comments inside the code are sufficient; separate explanation is OPTIONAL
+  - If general technical: START with direct answer
   - NEVER output code as plain text; ALWAYS use fenced code blocks
 </response_format>`,
 
@@ -273,13 +273,10 @@ Provide only the exact words to say in **markdown format**. Focus on finding win
     
     **For Coding Questions/Problems:**
     - Start with: "**💻 Coding Problem Detected**"
-    - Identify the problem statement
-    - Provide the **complete solution code** with:
-      - Full, working code in the appropriate language
-      - Line-by-line comments explaining the logic
-      - Time and space complexity analysis
-    - Explain the approach/algorithm used
-    - If applicable, provide alternative solutions
+    - IMMEDIATELY provide the **complete solution code** in fenced code blocks — code comes FIRST, always
+    - Include brief comments inside the code to explain logic
+    - Explanation after the code is OPTIONAL — only add if it adds significant value
+    - Keep it concise: code is the priority, not paragraphs of explanation
     
     **For Technical Documentation/Code:**
     - Start with: "**🔧 Technical Content Detected**"
