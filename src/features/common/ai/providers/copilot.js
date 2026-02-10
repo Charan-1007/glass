@@ -103,7 +103,14 @@ async function fetchModels(githubToken) {
             .map(m => ({
                 id: `copilot:${m.id}`,
                 name: m.name || m.id,
+                _category: m.model_picker_category || '',
             }));
+
+        // Sort: lightweight first (low-resource default), then versatile, then powerful
+        const categoryOrder = { lightweight: 0, versatile: 1, powerful: 2 };
+        modelList.sort((a, b) =>
+            (categoryOrder[a._category] ?? 9) - (categoryOrder[b._category] ?? 9)
+        );
 
         console.log(`[CopilotProvider] Models from API (${rawModels.length} total, ${modelList.length} chat-enabled):`,
             modelList.map(m => m.id).join(', '));
