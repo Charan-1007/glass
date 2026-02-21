@@ -252,6 +252,42 @@ export class ListenView extends LitElement {
             letter-spacing: 2px;
         }
 
+        .transcript-actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 4px;
+            padding-bottom: 2px;
+        }
+
+        .transcript-action-btn {
+            -webkit-app-region: no-drag;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 10px;
+            font-family: 'Helvetica Neue', sans-serif;
+            font-weight: 500;
+            padding: 3px 8px;
+            cursor: pointer !important;
+            user-select: none !important;
+            transition: all 0.15s ease;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .transcript-action-btn:hover {
+            background: rgba(255, 255, 255, 0.15);
+            color: rgba(255, 255, 255, 0.9);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .transcript-action-btn svg {
+            width: 10px;
+            height: 10px;
+        }
+
         .empty-state {
             display: flex;
             flex-direction: column;
@@ -276,7 +312,8 @@ export class ListenView extends LitElement {
         :host-context(body.has-glass) .top-bar,
         :host-context(body.has-glass) .copy-button,
         :host-context(body.has-glass) .transcription-container,
-        :host-context(body.has-glass) .transcript-line {
+        :host-context(body.has-glass) .transcript-line,
+        :host-context(body.has-glass) .transcript-action-btn {
             background: transparent !important;
             border: none !important;
             outline: none !important;
@@ -526,6 +563,18 @@ export class ListenView extends LitElement {
         }
     }
 
+    _handleAskAudio(text) {
+        if (!window.api || !text) return;
+        console.log('[ListenView] Ask Audio:', text.substring(0, 50));
+        window.api.listenView.askWithAudio(text);
+    }
+
+    _handleAskAudioScreen(text) {
+        if (!window.api || !text) return;
+        console.log('[ListenView] Ask Audio+Screen:', text.substring(0, 50));
+        window.api.listenView.askWithAudioAndScreen(text);
+    }
+
     updated(changedProperties) {
         super.updated(changedProperties);
 
@@ -597,6 +646,26 @@ export class ListenView extends LitElement {
                         : this.transcriptMessages.map(msg => html`
                             <div class="transcript-line ${msg.isPartial ? 'partial' : ''} ${msg.isSeparator ? 'separator' : ''}">
                                 ${msg.text}
+                                ${msg.isFinal && !msg.isSeparator ? html`
+                                    <div class="transcript-actions">
+                                        <button class="transcript-action-btn" @click=${() => this._handleAskAudio(msg.text)}>
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                                                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                                                <line x1="12" y1="19" x2="12" y2="23"/>
+                                            </svg>
+                                            Audio
+                                        </button>
+                                        <button class="transcript-action-btn" @click=${() => this._handleAskAudioScreen(msg.text)}>
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                                                <line x1="8" y1="21" x2="16" y2="21"/>
+                                                <line x1="12" y1="17" x2="12" y2="21"/>
+                                            </svg>
+                                            Audio+Screen
+                                        </button>
+                                    </div>
+                                ` : ''}
                             </div>
                         `)
                     }

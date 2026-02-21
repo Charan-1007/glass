@@ -293,21 +293,71 @@ export class MainHeader extends LitElement {
             width: 16px;
             height: 16px;
         }
-        .interview-action {
+        .interview-button {
+            -webkit-app-region: no-drag;
+            min-height: 32px;
+            padding: 4px 10px;
+            background: transparent;
+            border-radius: 9000px;
+            justify-content: center;
+            align-items: center;
+            gap: 6px;
+            display: flex;
+            border: none;
+            cursor: pointer;
+            position: relative;
+            z-index: 10;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
             margin-left: 2px;
         }
 
-        .interview-action.active {
-            background: rgba(0, 180, 80, 0.35);
+        .interview-button::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255, 255, 255, 0.14);
+            border-radius: 9000px;
+            z-index: -1;
+            transition: background 0.15s ease;
         }
 
-        .interview-action.active:hover {
-            background: rgba(0, 200, 90, 0.45);
+        .interview-button:hover::before {
+            background: rgba(255, 255, 255, 0.18);
+        }
+
+        .interview-button::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            border-radius: 9000px;
+            padding: 1px;
+            background: linear-gradient(169deg, rgba(255, 255, 255, 0.17) 0%, rgba(255, 255, 255, 0.08) 50%, rgba(255, 255, 255, 0.17) 100%);
+            -webkit-mask:
+                linear-gradient(#fff 0 0) content-box,
+                linear-gradient(#fff 0 0);
+            -webkit-mask-composite: destination-out;
+            mask-composite: exclude;
+            pointer-events: none;
+        }
+
+        .interview-button.active::before {
+            background: rgba(0, 180, 80, 0.4);
+        }
+
+        .interview-button.active:hover::before {
+            background: rgba(0, 200, 90, 0.5);
+        }
+
+        .interview-button .listen-icon svg {
+            width: 12px;
+            height: 12px;
         }
 
         /* ────────────────[ GLASS BYPASS ]─────────────── */
         :host-context(body.has-glass) .header,
         :host-context(body.has-glass) .listen-button,
+        :host-context(body.has-glass) .interview-button,
         :host-context(body.has-glass) .header-actions,
         :host-context(body.has-glass) .settings-button {
             background: transparent !important;
@@ -323,7 +373,9 @@ export class MainHeader extends LitElement {
         :host-context(body.has-glass) .header::before,
         :host-context(body.has-glass) .header::after,
         :host-context(body.has-glass) .listen-button::before,
-        :host-context(body.has-glass) .listen-button::after {
+        :host-context(body.has-glass) .listen-button::after,
+        :host-context(body.has-glass) .interview-button::before,
+        :host-context(body.has-glass) .interview-button::after {
             display: none !important;
         }
 
@@ -677,21 +729,21 @@ export class MainHeader extends LitElement {
                         `}
                 </button>
 
-                <div 
-                    class="header-actions interview-action ${this.interviewMode ? 'active' : ''}"
+                <button 
+                    class="interview-button ${this.interviewMode ? 'active' : ''}"
                     @mousedown=${(e) => e.stopPropagation()}
                     @click=${() => this._handleInterviewToggle()}
                 >
                     <div class="action-text">
                         <div class="action-text-content">Interview</div>
                     </div>
-                    <div class="icon-container">
+                    <div class="listen-icon">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                             <circle cx="12" cy="7" r="4" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
                     </div>
-                </div>
+                </button>
 
                 <div class="header-actions ask-action" @click=${() => this._handleAskClick()}>
                     <div class="action-text">

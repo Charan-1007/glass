@@ -193,6 +193,10 @@ contextBridge.exposeInMainWorld('api', {
     // Window Management
     adjustWindowHeight: (winName, height) => ipcRenderer.invoke('adjust-window-height', { winName, height }),
     
+    // Directed Ask
+    askWithAudio: (text) => ipcRenderer.invoke('ask:withAudio', text),
+    askWithAudioAndScreen: (text) => ipcRenderer.invoke('ask:withAudioAndScreen', text),
+    
     // Listeners
     onSessionStateChanged: (callback) => ipcRenderer.on('session-state-changed', callback),
     removeOnSessionStateChanged: (callback) => ipcRenderer.removeListener('session-state-changed', callback)

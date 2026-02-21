@@ -127,6 +127,8 @@ module.exports = {
     ipcMain.handle('ask:sendQuestionFromSummary', async (event, userPrompt) => await askService.sendMessage(userPrompt));
     ipcMain.handle('ask:toggleAskButton', async () => await askService.toggleAskButton());
     ipcMain.handle('ask:closeAskWindow',  async () => await askService.closeAskWindow());
+    ipcMain.handle('ask:withAudio', async (event, text) => await askService.sendDirectMessage(text, false));
+    ipcMain.handle('ask:withAudioAndScreen', async (event, text) => await askService.sendDirectMessage(text, true));
     
     // Screenshot Queue Management
     ipcMain.handle('ask:captureManualScreenshot', async () => await askService.captureManualScreenshotToQueue());

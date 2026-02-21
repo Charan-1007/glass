@@ -549,6 +549,120 @@ class AskService {
     }
 
     /**
+     * Send a specific transcript text directly to the LLM.
+     * @param {string} text - The transcript text to send
+     * @param {boolean} includeScreen - Whether to also capture and include a screenshot
+     * @returns {Promise<{success: boolean, response?: string, error?: string}>}
+     */
+    async sendDirectMessage(text, includeScreen = false) {
+        if (this.state.isLoading || this.state.isStreaming) {
+            console.log('[AskService] LLM is busy, discarding direct message request');
+            return { success: false, error: 'LLM is busy' };
+        }
+
+        internalBridge.emit('window:requestVisibility', { name: 'ask', visible: true });
+        this.state = {
+            ...this.state,
+            isLoading: true,
+            isStreaming: false,
+            currentQuestion: text,
+            currentResponse: '',
+            showTextInput: false,
+        };
+        this._broadcastState();
+
+        if (this.abortController) {
+            this.abortController.abort('New request received.');
+        }
+        this.abortController = new AbortController();
+        const { signal } = this.abortController;
+
+        let sessionId;
+
+        try {
+            console.log(`[AskService] 🎙️ Direct message (screen=${includeScreen}): ${text.substring(0, 50)}...`);
+
+            sessionId = await sessionRepository.getOrCreateActive('ask');
+            await askRepository.addAiMessage({ sessionId, role: 'user', content: text.trim() });
+
+            const modelInfo = await modelStateService.getCurrentModelInfo('llm');
+            if (!modelInfo || !modelInfo.apiKey) {
+                throw new Error('AI model or API key not configured.');
+            }
+
+            let screenshotsToAnalyze = [];
+            if (includeScreen) {
+                const screenshotResult = await captureScreenshot({ quality: 'medium' });
+                if (screenshotResult.success) {
+                    screenshotsToAnalyze = [{ base64: screenshotResult.base64, width: screenshotResult.width, height: screenshotResult.height }];
+                }
+                console.log('[AskService] Captured screen for Audio+Screen request');
+            }
+
+            const systemPrompt = includeScreen && screenshotsToAnalyze.length > 0
+                ? await getSystemPrompt('pickle_glass_analysis', text, false)
+                : await getSystemPrompt('pickle_glass_analysis', text, false);
+
+            const messages = [
+                { role: 'system', content: systemPrompt },
+                {
+                    role: 'user',
+                    content: [
+                        { type: 'text', text: `User Request: ${text.trim()}` },
+                    ],
+                },
+            ];
+
+            for (const screenshot of screenshotsToAnalyze) {
+                if (screenshot.base64) {
+                    messages[1].content.push({
+                        type: 'image_url',
+                        image_url: { url: `data:image/jpeg;base64,${screenshot.base64}` },
+                    });
+                }
+            }
+
+            const streamingLLM = createStreamingLLM(modelInfo.provider, {
+                apiKey: modelInfo.apiKey,
+                model: modelInfo.model,
+                temperature: 0.7,
+                maxTokens: 2048,
+                usePortkey: modelInfo.provider === 'openai-glass',
+                portkeyVirtualKey: modelInfo.provider === 'openai-glass' ? modelInfo.apiKey : undefined,
+            });
+
+            const response = await streamingLLM.streamChat(messages);
+            const askWin = getWindowPool()?.get('ask');
+
+            if (!askWin || askWin.isDestroyed()) {
+                response.body.getReader().cancel();
+                return { success: false, error: 'Ask window is not available.' };
+            }
+
+            const reader = response.body.getReader();
+            signal.addEventListener('abort', () => {
+                reader.cancel(signal.reason).catch(() => {});
+            });
+
+            await this._processStream(reader, askWin, sessionId, signal);
+            return { success: true };
+
+        } catch (error) {
+            console.error('[AskService] Error during direct message processing:', error);
+            let errorMessage = error.message || 'Unknown error occurred';
+            this.state = {
+                ...this.state,
+                isLoading: false,
+                isStreaming: false,
+                currentResponse: `❌ Error: ${errorMessage}`,
+                showTextInput: true,
+            };
+            this._broadcastState();
+            return { success: false, error: errorMessage };
+        }
+    }
+
+    /**
      * 
      * @param {ReadableStreamDefaultReader} reader
      * @param {BrowserWindow} askWin
@@ -654,6 +768,7 @@ const askService = new AskService();
 module.exports = {
     // AskService instance methods (default export behavior)
     sendMessage: (...args) => askService.sendMessage(...args),
+    sendDirectMessage: (...args) => askService.sendDirectMessage(...args),
     toggleAskButton: (...args) => askService.toggleAskButton(...args),
     closeAskWindow: (...args) => askService.closeAskWindow(...args),
     
