@@ -356,8 +356,10 @@ class AskService {
      * @param {string} userPrompt
      * @returns {Promise<{success: boolean, response?: string, error?: string}>}
      */
-    async sendMessage(userPrompt, conversationHistoryRaw=[]) {
-        internalBridge.emit('window:requestVisibility', { name: 'ask', visible: true });
+    async sendMessage(userPrompt, conversationHistoryRaw=[], options = {}) {
+        if (!options.silent) {
+            internalBridge.emit('window:requestVisibility', { name: 'ask', visible: true });
+        }
         this.state = {
             ...this.state,
             isLoading: true,

@@ -196,16 +196,21 @@ class ShortcutsService {
 
         // ── Ctrl+Shift+L  →  Toggle listen mode ─────────────────────────────
         globalShortcut.register(`${modifier}+Shift+L`, async () => {
-            // Don't toggle listen when app is hidden via Ctrl+\
             const headerCheck = this.windowPool.get('header');
-            if (!headerCheck || headerCheck.isDestroyed() || !headerCheck.isVisible()) return;
+            const isAppHidden = !headerCheck || headerCheck.isDestroyed() || !headerCheck.isVisible();
 
             try {
                 const isActive = listenService.isSessionActive();
                 const headerWin = this.windowPool.get('header');
                 const result = isActive
                     ? await listenService.handleListenRequest('Stop')
-                    : await listenService.handleListenRequest('Listen');
+                    : await listenService.handleListenRequest('Listen', { silent: isAppHidden });
+
+                // Mark listen window for restore when unhiding
+                if (isAppHidden && !isActive) {
+                    this._wasListenVisible = true;
+                }
+
                 // Only advance the header state machine if the action actually ran
                 const success = result?.started !== false;
                 if (headerWin && !headerWin.isDestroyed()) {
@@ -269,8 +274,14 @@ class ShortcutsService {
                 case 'nextStep':
                     callback = () => {
                         const headerWindow = this.windowPool.get('header');
-                        if (!headerWindow || headerWindow.isDestroyed() || !headerWindow.isVisible()) return;
-                        askService.toggleAskButton(true);
+                        const isAppHidden = !headerWindow || headerWindow.isDestroyed() || !headerWindow.isVisible();
+                        if (isAppHidden) {
+                            // Run silently: capture screen + send to LLM without showing windows
+                            askService.sendMessage('', [], { silent: true });
+                            this._wasAskVisible = true; // Show ask when user unhides
+                        } else {
+                            askService.toggleAskButton(true);
+                        }
                     };
                     break;
                 case 'scrollUp':

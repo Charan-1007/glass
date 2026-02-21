@@ -79,7 +79,7 @@ class ListenService {
         }
     }
 
-    async handleListenRequest(listenButtonText) {
+    async handleListenRequest(listenButtonText, options = {}) {
         const { windowPool } = require('../../window/windowManager');
         const listenWindow = windowPool.get('listen');
 
@@ -92,7 +92,7 @@ class ListenService {
                     const sttModelInfo = await modelStateService.getCurrentModelInfo('stt');
                     if (!sttModelInfo || !sttModelInfo.model) {
                         console.warn('[ListenService] No STT model configured.');
-                        this._showNoSttModelMessage();
+                        if (!options.silent) this._showNoSttModelMessage();
                         return { started: false };
                     }
 
@@ -105,12 +105,14 @@ class ListenService {
                         );
                         if (!isModelInstalled) {
                             console.warn(`[ListenService] Whisper model "${sttModelInfo.model}" is not downloaded.`);
-                            this._showNoSttModelMessage();
+                            if (!options.silent) this._showNoSttModelMessage();
                             return { started: false };
                         }
                     }
 
-                    internalBridge.emit('window:requestVisibility', { name: 'listen', visible: true });
+                    if (!options.silent) {
+                        internalBridge.emit('window:requestVisibility', { name: 'listen', visible: true });
+                    }
                     await this.initializeSession();
                     if (listenWindow && !listenWindow.isDestroyed()) {
                         listenWindow.webContents.send('session-state-changed', { isActive: true });
