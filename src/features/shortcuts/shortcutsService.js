@@ -196,6 +196,10 @@ class ShortcutsService {
 
         // ── Ctrl+Shift+L  →  Toggle listen mode ─────────────────────────────
         globalShortcut.register(`${modifier}+Shift+L`, async () => {
+            // Don't toggle listen when app is hidden via Ctrl+\
+            const headerCheck = this.windowPool.get('header');
+            if (!headerCheck || headerCheck.isDestroyed() || !headerCheck.isVisible()) return;
+
             try {
                 const isActive = listenService.isSessionActive();
                 const headerWin = this.windowPool.get('header');
@@ -263,7 +267,11 @@ class ShortcutsService {
                     };
                     break;
                 case 'nextStep':
-                    callback = () => askService.toggleAskButton(true);
+                    callback = () => {
+                        const headerWindow = this.windowPool.get('header');
+                        if (!headerWindow || headerWindow.isDestroyed() || !headerWindow.isVisible()) return;
+                        askService.toggleAskButton(true);
+                    };
                     break;
                 case 'scrollUp':
     callback = () => {
