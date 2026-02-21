@@ -5,6 +5,7 @@ export class MainHeader extends LitElement {
         isTogglingSession: { type: Boolean, state: true },
         shortcuts: { type: Object, state: true },
         listenSessionStatus: { type: String, state: true },
+        interviewMode: { type: Boolean, state: true },
     };
 
     static styles = css`
@@ -82,18 +83,21 @@ export class MainHeader extends LitElement {
 
         .listen-button {
             -webkit-app-region: no-drag;
-            height: 26px;
-            padding: 0 13px;
+            min-height: 32px;
+            padding: 4px 16px;
             background: transparent;
             border-radius: 9000px;
             justify-content: center;
-            width: 78px;
+            min-width: 78px;
             align-items: center;
             gap: 6px;
             display: flex;
             border: none;
             cursor: pointer;
             position: relative;
+            z-index: 10;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
         }
 
         .listen-button:disabled {
@@ -289,6 +293,18 @@ export class MainHeader extends LitElement {
             width: 16px;
             height: 16px;
         }
+        .interview-action {
+            margin-left: 2px;
+        }
+
+        .interview-action.active {
+            background: rgba(0, 180, 80, 0.35);
+        }
+
+        .interview-action.active:hover {
+            background: rgba(0, 200, 90, 0.45);
+        }
+
         /* ────────────────[ GLASS BYPASS ]─────────────── */
         :host-context(body.has-glass) .header,
         :host-context(body.has-glass) .listen-button,
@@ -349,6 +365,7 @@ export class MainHeader extends LitElement {
         this.settingsHideTimer = null;
         this.isTogglingSession = false;
         this.listenSessionStatus = 'beforeSession';
+        this.interviewMode = false;
         this.animationEndTimer = null;
         this.handleAnimationEnd = this.handleAnimationEnd.bind(this);
         this.handleMouseMove = this.handleMouseMove.bind(this);
@@ -361,7 +378,6 @@ export class MainHeader extends LitElement {
         switch (status) {
             case 'beforeSession': return 'Listen';
             case 'inSession'   : return 'Stop';
-            case 'afterSession': return 'Done';
             default            : return 'Listen';
         }
     }
@@ -389,7 +405,7 @@ export class MainHeader extends LitElement {
         const deltaX = Math.abs(e.screenX - this.dragState.initialMouseX);
         const deltaY = Math.abs(e.screenY - this.dragState.initialMouseY);
         
-        if (deltaX > 3 || deltaY > 3) {
+        if (deltaX > 5 || deltaY > 5) {
             this.dragState.moved = true;
         }
 
@@ -475,15 +491,14 @@ export class MainHeader extends LitElement {
 
             this._sessionStateTextListener = (event, { success }) => {
                 if (success) {
-                    this.listenSessionStatus = ({
-                        beforeSession: 'inSession',
-                        inSession: 'afterSession',
-                        afterSession: 'beforeSession',
-                    })[this.listenSessionStatus] || 'beforeSession';
+                    // Two-state toggle: beforeSession ↔ inSession
+                    this.listenSessionStatus = this.listenSessionStatus === 'inSession'
+                        ? 'beforeSession'
+                        : 'inSession';
                 } else {
                     this.listenSessionStatus = 'beforeSession';
                 }
-                this.isTogglingSession = false; // ✨ 로딩 상태만 해제
+                this.isTogglingSession = false;
             };
             window.api.mainHeader.onListenChangeSessionResult(this._sessionStateTextListener);
 
@@ -492,6 +507,11 @@ export class MainHeader extends LitElement {
                 this.shortcuts = keybinds;
             };
             window.api.mainHeader.onShortcutsUpdated(this._shortcutListener);
+
+            // Load interview mode state
+            window.api.mainHeader.getInterviewMode().then(result => {
+                if (result) this.interviewMode = !!result.enabled;
+            }).catch(() => {});
         }
     }
 
@@ -574,6 +594,21 @@ export class MainHeader extends LitElement {
         }
     }
 
+    async _handleInterviewToggle() {
+        if (this.wasJustDragged) return;
+        try {
+            if (window.api) {
+                const newState = !this.interviewMode;
+                const result = await window.api.mainHeader.setInterviewMode(newState);
+                if (result?.success) {
+                    this.interviewMode = result.enabled;
+                }
+            }
+        } catch (error) {
+            console.error('IPC invoke for interview mode toggle failed:', error);
+        }
+    }
+
 
     renderShortcut(accelerator) {
         if (!accelerator) return html``;
@@ -603,14 +638,14 @@ export class MainHeader extends LitElement {
     
         const buttonClasses = {
             active: listenButtonText === 'Stop',
-            done: listenButtonText === 'Done',
         };
-        const showStopIcon = listenButtonText === 'Stop' || listenButtonText === 'Done';
+        const showStopIcon = listenButtonText === 'Stop';
 
         return html`
             <div class="header" @mousedown=${this.handleMouseDown}>
                 <button 
                     class="listen-button ${Object.keys(buttonClasses).filter(k => buttonClasses[k]).join(' ')}"
+                    @mousedown=${(e) => e.stopPropagation()}
                     @click=${this._handleListenClick}
                     ?disabled=${this.isTogglingSession}
                 >
@@ -641,6 +676,22 @@ export class MainHeader extends LitElement {
                             </div>
                         `}
                 </button>
+
+                <div 
+                    class="header-actions interview-action ${this.interviewMode ? 'active' : ''}"
+                    @mousedown=${(e) => e.stopPropagation()}
+                    @click=${() => this._handleInterviewToggle()}
+                >
+                    <div class="action-text">
+                        <div class="action-text-content">Interview</div>
+                    </div>
+                    <div class="icon-container">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <circle cx="12" cy="7" r="4" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </div>
+                </div>
 
                 <div class="header-actions ask-action" @click=${() => this._handleAskClick()}>
                     <div class="action-text">

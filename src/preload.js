@@ -123,6 +123,10 @@ contextBridge.exposeInMainWorld('api', {
     sendAskButtonClick: () => ipcRenderer.invoke('ask:toggleAskButton'),
     sendToggleAllWindowsVisibility: () => ipcRenderer.invoke('shortcut:toggleAllWindowsVisibility'),
     
+    // Interview Mode
+    setInterviewMode: (enabled) => ipcRenderer.invoke('interview:set-mode', enabled),
+    getInterviewMode: () => ipcRenderer.invoke('interview:get-mode'),
+
     // Listeners
     onListenChangeSessionResult: (callback) => ipcRenderer.on('listen:changeSessionResult', callback),
     removeOnListenChangeSessionResult: (callback) => ipcRenderer.removeListener('listen:changeSessionResult', callback),
@@ -244,11 +248,17 @@ contextBridge.exposeInMainWorld('api', {
     // Whisper Management
     getWhisperInstalledModels: () => ipcRenderer.invoke('whisper:get-installed-models'),
     downloadWhisperModel: (modelId) => ipcRenderer.invoke('whisper:download-model', modelId),
+    deleteWhisperModel: (modelId) => ipcRenderer.invoke('whisper:delete-model', modelId),
     
     // Settings Management
     getPresets: () => ipcRenderer.invoke('settings:getPresets'),
     getAutoUpdate: () => ipcRenderer.invoke('settings:get-auto-update'),
     setAutoUpdate: (isEnabled) => ipcRenderer.invoke('settings:set-auto-update', isEnabled),
+    
+    // Resume Management
+    uploadResume: () => ipcRenderer.invoke('settings:upload-resume'),
+    getResume: () => ipcRenderer.invoke('settings:get-resume'),
+    removeResume: () => ipcRenderer.invoke('settings:remove-resume'),
     getContentProtectionStatus: () => ipcRenderer.invoke('get-content-protection-status'),
     toggleContentProtection: () => ipcRenderer.invoke('toggle-content-protection'),
     getCurrentShortcuts: () => ipcRenderer.invoke('settings:getCurrentShortcuts'),

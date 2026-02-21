@@ -502,26 +502,7 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
                 }
             }
 
-            try {
-                micMediaStream = await navigator.mediaDevices.getUserMedia({
-                    audio: {
-                        sampleRate: SAMPLE_RATE,
-                        channelCount: 1,
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true,
-                    },
-                    video: false,
-                });
-
-                console.log('macOS microphone capture started');
-                const { context, processor } = await setupMicProcessing(micMediaStream);
-                audioContext = context;
-                audioProcessor = processor;
-            } catch (micErr) {
-                console.warn('Failed to get microphone on macOS:', micErr);
-            }
-            ////////// for index & subjects //////////
+            // Mic recording is disabled — only system audio is captured
 
             console.log('macOS screen capture started - audio handled by SystemAudioDump');
         } else if (isLinux) {
@@ -531,38 +512,17 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
                 throw new Error('STT sessions not initialized - please wait for initialization to complete');
             }
             
-            // Linux - use display media for screen capture and getUserMedia for microphone
+            // Linux - use display media for screen capture
             mediaStream = await navigator.mediaDevices.getDisplayMedia({
                 video: {
                     frameRate: 1,
                     width: { ideal: 1920 },
                     height: { ideal: 1080 },
                 },
-                audio: false, // Don't use system audio loopback on Linux
+                audio: false,
             });
 
-            // Get microphone input for Linux
-            let micMediaStream = null;
-            try {
-                micMediaStream = await navigator.mediaDevices.getUserMedia({
-                    audio: {
-                        sampleRate: SAMPLE_RATE,
-                        channelCount: 1,
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true,
-                    },
-                    video: false,
-                });
-
-                console.log('Linux microphone capture started');
-
-                // Setup audio processing for microphone on Linux
-                setupLinuxMicProcessing(micMediaStream);
-            } catch (micError) {
-                console.warn('Failed to get microphone access on Linux:', micError);
-                // Continue without microphone if permission denied
-            }
+            // Mic recording is disabled — only system audio is captured
 
             console.log('Linux screen capture started');
         } else {
@@ -575,27 +535,9 @@ async function startCapture(screenshotIntervalSeconds = 5, imageQuality = 'mediu
                 throw new Error('STT sessions not initialized - please wait for initialization to complete');
             }
 
-            // 1. Get user's microphone
-            try {
-                micMediaStream = await navigator.mediaDevices.getUserMedia({
-                    audio: {
-                        sampleRate: SAMPLE_RATE,
-                        channelCount: 1,
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true,
-                    },
-                    video: false,
-                });
-                console.log('Windows microphone capture started');
-                const { context, processor } = await setupMicProcessing(micMediaStream);
-                audioContext = context;
-                audioProcessor = processor;
-            } catch (micErr) {
-                console.warn('Could not get microphone access on Windows:', micErr);
-            }
+            // Mic recording is disabled — only system audio is captured
 
-            // 2. Get system audio using native Electron loopback
+            // Get system audio using native Electron loopback
             try {
                 mediaStream = await navigator.mediaDevices.getDisplayMedia({
                     video: true,

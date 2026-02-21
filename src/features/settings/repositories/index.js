@@ -44,6 +44,21 @@ const settingsRepositoryAdapter = {
         const uid = authService.getCurrentUserId();
         return getBaseRepository().setAutoUpdate(uid, isEnabled);
     },
+
+    getResume: () => {
+        const uid = authService.getCurrentUserId();
+        return getBaseRepository().getResume(uid);
+    },
+
+    saveResume: (text, filename) => {
+        const uid = authService.getCurrentUserId();
+        return getBaseRepository().saveResume(uid, text, filename);
+    },
+
+    removeResume: () => {
+        const uid = authService.getCurrentUserId();
+        return getBaseRepository().removeResume(uid);
+    },
 };
 
 module.exports = settingsRepositoryAdapter;

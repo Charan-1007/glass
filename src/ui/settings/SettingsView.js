@@ -463,6 +463,21 @@ export class SettingsView extends LitElement {
         }
         .model-status.installed { color: rgba(0, 255, 0, 0.8); }
         .model-status.not-installed { color: rgba(255, 200, 0, 0.8); }
+        .model-delete-btn {
+            background: none;
+            border: none;
+            color: rgba(255, 80, 80, 0.7);
+            font-size: 11px;
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 3px;
+            margin-left: 4px;
+            transition: color 0.15s, background 0.15s;
+        }
+        .model-delete-btn:hover {
+            color: rgba(255, 80, 80, 1);
+            background: rgba(255, 80, 80, 0.15);
+        }
         .install-progress {
             flex: 1;
             height: 4px;
@@ -549,6 +564,10 @@ export class SettingsView extends LitElement {
         // Copilot related properties
         copilotStatus: { type: Object, state: true },
         copilotAuthPending: { type: Boolean, state: true },
+        // Resume related properties
+        resumeFilename: { type: String, state: true },
+        resumeCharCount: { type: Number, state: true },
+        resumeUploading: { type: Boolean, state: true },
     };
     //////// after_modelStateService ////////
 
@@ -581,6 +600,10 @@ export class SettingsView extends LitElement {
         // Copilot related
         this.copilotStatus = { loggedIn: false, user: null };
         this.copilotAuthPending = false;
+        // Resume related
+        this.resumeFilename = null;
+        this.resumeCharCount = 0;
+        this.resumeUploading = false;
         this.handleUsePicklesKey = this.handleUsePicklesKey.bind(this)
         this.autoUpdateEnabled = true;
         this.autoUpdateLoading = true;
@@ -700,6 +723,7 @@ export class SettingsView extends LitElement {
             
             // Load LocalAI status asynchronously to improve initial load time
             this.loadLocalAIStatus();
+            this.loadResume();
         } catch (error) {
             console.error('Error loading initial settings data:', error);
         } finally {
@@ -941,6 +965,31 @@ export class SettingsView extends LitElement {
             delete this.installingModels[modelId];
             this.requestUpdate();
             alert(`Error downloading ${modelId}: ${error.message}`);
+        }
+    }
+
+    async deleteWhisperModel(modelId) {
+        try {
+            const result = await window.api.settingsView.deleteWhisperModel(modelId);
+            if (result.success) {
+                // Update the model's installed status
+                if (this.providerConfig?.whisper?.sttModels) {
+                    const modelInfo = this.providerConfig.whisper.sttModels.find(m => m.id === modelId);
+                    if (modelInfo) {
+                        modelInfo.installed = false;
+                    }
+                }
+                // If the deleted model was selected, clear the selection
+                if (this.selectedStt === modelId) {
+                    this.selectedStt = '';
+                }
+                this.requestUpdate();
+                console.log(`[SettingsView] Whisper model ${modelId} deleted.`);
+            } else {
+                console.error(`[SettingsView] Failed to delete model: ${result.error}`);
+            }
+        } catch (error) {
+            console.error(`[SettingsView] Error deleting Whisper model ${modelId}:`, error);
         }
     }
     
@@ -1285,6 +1334,53 @@ export class SettingsView extends LitElement {
         }
     }
 
+    // ── Resume Management ──────────────────────────────────────────
+
+    async loadResume() {
+        if (!window.api) return;
+        try {
+            const result = await window.api.settingsView.getResume();
+            if (result?.success && result.filename) {
+                this.resumeFilename = result.filename;
+                this.resumeCharCount = result.charCount || 0;
+            }
+        } catch (e) {
+            console.error('[SettingsView] Error loading resume:', e);
+        }
+    }
+
+    async handleUploadResume() {
+        if (!window.api || this.resumeUploading) return;
+        this.resumeUploading = true;
+        this.requestUpdate();
+        try {
+            const result = await window.api.settingsView.uploadResume();
+            if (result?.success) {
+                this.resumeFilename = result.filename;
+                this.resumeCharCount = result.charCount || 0;
+            } else if (result && !result.canceled && result.error) {
+                console.error('[SettingsView] Resume upload failed:', result.error);
+            }
+        } catch (e) {
+            console.error('[SettingsView] Error uploading resume:', e);
+        }
+        this.resumeUploading = false;
+        this.requestUpdate();
+    }
+
+    async handleRemoveResume() {
+        if (!window.api) return;
+        try {
+            const result = await window.api.settingsView.removeResume();
+            if (result?.success) {
+                this.resumeFilename = null;
+                this.resumeCharCount = 0;
+            }
+        } catch (e) {
+            console.error('[SettingsView] Error removing resume:', e);
+        }
+    }
+
     //////// after_modelStateService ////////
     render() {
         if (this.isLoading) {
@@ -1480,6 +1576,7 @@ export class SettingsView extends LitElement {
                                                 </div>
                                             ` : whisperModel?.installed ? html`
                                                 <span class="model-status installed">✓ Installed</span>
+                                                <button class="model-delete-btn" title="Delete model" @click=${(e) => { e.stopPropagation(); this.deleteWhisperModel(model.id); }}>✕</button>
                                             ` : html`
                                                 <span class="model-status not-installed">Not Installed</span>
                                             `}
@@ -1514,6 +1611,33 @@ export class SettingsView extends LitElement {
 
                 ${apiKeyManagementHTML}
                 ${modelSelectionHTML}
+
+                <!-- Resume Upload Section -->
+                <div class="api-key-section" style="padding: 8px 0; border-top: 1px solid rgba(255, 255, 255, 0.1);">
+                    <label style="font-size: 11px; font-weight: 600; color: rgba(255, 255, 255, 0.85); margin-bottom: 6px; display: block;">Resume</label>
+                    ${this.resumeFilename ? html`
+                        <div style="padding: 8px; background: rgba(0,255,0,0.1); border-radius: 4px; font-size: 11px; color: rgba(0,255,0,0.8); margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                            <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${this.resumeFilename}</span>
+                            <span style="color: rgba(255,255,255,0.5); font-size: 9px; flex-shrink: 0;">${this.resumeCharCount > 0 ? `${Math.round(this.resumeCharCount / 1000)}k chars` : ''}</span>
+                        </div>
+                        <div style="display: flex; gap: 4px;">
+                            <button class="settings-button half-width" @click=${() => this.handleUploadResume()} ?disabled=${this.resumeUploading}>
+                                ${this.resumeUploading ? 'Uploading...' : 'Replace'}
+                            </button>
+                            <button class="settings-button half-width danger" @click=${() => this.handleRemoveResume()}>
+                                Remove
+                            </button>
+                        </div>
+                    ` : html`
+                        <div style="padding: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; font-size: 10px; color: rgba(255,255,255,0.5); margin-bottom: 6px; line-height: 1.4;">
+                            Upload your resume PDF to give the AI personal context for interview questions
+                        </div>
+                        <button class="settings-button full-width" @click=${() => this.handleUploadResume()} ?disabled=${this.resumeUploading}>
+                            ${this.resumeUploading ? 'Uploading...' : 'Upload Resume PDF'}
+                        </button>
+                    `}
+                </div>
 
                 <div class="buttons-section" style="border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 6px; margin-top: 6px;">
                     <button class="settings-button full-width" @click=${this.openShortcutEditor}>

@@ -5,6 +5,7 @@ const authService = require('../common/services/authService');
 const sessionRepository = require('../common/repositories/session');
 const sttRepository = require('./stt/repositories');
 const internalBridge = require('../../bridge/internalBridge');
+const modelStateService = require('../common/services/modelStateService');
 
 class ListenService {
     constructor() {
@@ -53,21 +54,68 @@ class ListenService {
         console.log('[ListenService] Initialized and ready.');
     }
 
+    /**
+     * Show a message in the Ask window telling the user no STT model is available.
+     */
+    _showNoSttModelMessage() {
+        const { windowPool } = require('../../window/windowManager');
+        const askWindow = windowPool?.get('ask');
+
+        // Make the ask window visible
+        internalBridge.emit('window:requestVisibility', { name: 'ask', visible: true });
+
+        const message = '⚠️ **No speech recognition model found.**\n\nPlease go to **Settings** and download a Whisper model to use the Listen feature.';
+
+        // Send the message to the Ask window as a state update
+        if (askWindow && !askWindow.isDestroyed()) {
+            askWindow.webContents.send('ask:stateUpdate', {
+                isVisible: true,
+                isLoading: false,
+                isStreaming: false,
+                currentQuestion: 'Listen',
+                currentResponse: message,
+                showTextInput: false,
+            });
+        }
+    }
+
     async handleListenRequest(listenButtonText) {
         const { windowPool } = require('../../window/windowManager');
         const listenWindow = windowPool.get('listen');
-        const header = windowPool.get('header');
 
         try {
             switch (listenButtonText) {
                 case 'Listen':
                     console.log('[ListenService] changeSession to "Listen"');
+
+                    // Check if an STT model is configured before starting
+                    const sttModelInfo = await modelStateService.getCurrentModelInfo('stt');
+                    if (!sttModelInfo || !sttModelInfo.model) {
+                        console.warn('[ListenService] No STT model configured.');
+                        this._showNoSttModelMessage();
+                        return { started: false };
+                    }
+
+                    // If whisper provider, verify the model file is actually downloaded
+                    if (sttModelInfo.provider === 'whisper') {
+                        const whisperService = require('../common/services/whisperService');
+                        const installedModels = await whisperService.getInstalledModels();
+                        const isModelInstalled = installedModels.some(
+                            m => m.id === sttModelInfo.model && m.installed
+                        );
+                        if (!isModelInstalled) {
+                            console.warn(`[ListenService] Whisper model "${sttModelInfo.model}" is not downloaded.`);
+                            this._showNoSttModelMessage();
+                            return { started: false };
+                        }
+                    }
+
                     internalBridge.emit('window:requestVisibility', { name: 'listen', visible: true });
                     await this.initializeSession();
                     if (listenWindow && !listenWindow.isDestroyed()) {
                         listenWindow.webContents.send('session-state-changed', { isActive: true });
                     }
-                    break;
+                    return { started: true };
         
                 case 'Stop':
                     console.log('[ListenService] changeSession to "Stop"');
@@ -75,23 +123,15 @@ class ListenService {
                     if (listenWindow && !listenWindow.isDestroyed()) {
                         listenWindow.webContents.send('session-state-changed', { isActive: false });
                     }
-                    break;
-        
-                case 'Done':
-                    console.log('[ListenService] changeSession to "Done"');
-                    internalBridge.emit('window:requestVisibility', { name: 'listen', visible: false });
-                    listenWindow.webContents.send('session-state-changed', { isActive: false });
-                    break;
+                    // Keep the listen window visible so the user can see the transcript
+                    return { started: true };
         
                 default:
                     throw new Error(`[ListenService] unknown listenButtonText: ${listenButtonText}`);
             }
-            
-            header.webContents.send('listen:changeSessionResult', { success: true });
 
         } catch (error) {
             console.error('[ListenService] error in handleListenRequest:', error);
-            header.webContents.send('listen:changeSessionResult', { success: false });
             throw error; 
         }
     }

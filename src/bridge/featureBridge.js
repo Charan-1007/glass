@@ -29,6 +29,21 @@ module.exports = {
     ipcMain.handle('settings:ensure-ollama-ready', async () => await settingsService.ensureOllamaReady());
     ipcMain.handle('settings:shutdown-ollama', async () => await settingsService.shutdownOllama());
 
+    // Resume
+    ipcMain.handle('settings:upload-resume', async () => await settingsService.uploadResume());
+    ipcMain.handle('settings:get-resume', async () => await settingsService.getResume());
+    ipcMain.handle('settings:remove-resume', async () => await settingsService.removeResume());
+
+    // Interview Mode
+    const promptBuilder = require('../features/common/prompts/promptBuilder');
+    ipcMain.handle('interview:set-mode', async (event, enabled) => {
+        promptBuilder.setInterviewMode(enabled);
+        return { success: true, enabled: promptBuilder.getInterviewMode() };
+    });
+    ipcMain.handle('interview:get-mode', async () => {
+        return { enabled: promptBuilder.getInterviewMode() };
+    });
+
     // Shortcuts
     ipcMain.handle('settings:getCurrentShortcuts', async () => await shortcutsService.loadKeybinds());
     ipcMain.handle('shortcut:getDefaultShortcuts', async () => await shortcutsService.handleRestoreDefaults());
@@ -60,6 +75,7 @@ module.exports = {
     // Whisper
     ipcMain.handle('whisper:download-model', async (event, modelId) => await whisperService.handleDownloadModel(modelId));
     ipcMain.handle('whisper:get-installed-models', async () => await whisperService.handleGetInstalledModels());
+    ipcMain.handle('whisper:delete-model', async (event, modelId) => await whisperService.handleDeleteModel(modelId));
        
     // General
     ipcMain.handle('get-preset-templates', () => presetRepository.getPresetTemplates());
@@ -123,11 +139,7 @@ module.exports = {
     // Listen
     ipcMain.handle('listen:sendMicAudio', async (event, { data, mimeType }) => await listenService.handleSendMicAudioContent(data, mimeType));
     ipcMain.handle('listen:sendSystemAudio', async (event, { data, mimeType }) => {
-        const result = await listenService.sttService.sendSystemAudioContent(data, mimeType);
-        if(result.success) {
-            listenService.sendToRenderer('system-audio-data', { data });
-        }
-        return result;
+        return await listenService.sttService.handleSendSystemAudioContent(data, mimeType);
     });
     ipcMain.handle('listen:startMacosSystemAudio', async () => await listenService.handleStartMacosAudio());
     ipcMain.handle('listen:stopMacosSystemAudio', async () => await listenService.handleStopMacosAudio());
@@ -135,11 +147,20 @@ module.exports = {
     ipcMain.handle('listen:isSessionActive', async () => await listenService.isSessionActive());
     ipcMain.handle('listen:changeSession', async (event, listenButtonText) => {
       console.log('[FeatureBridge] listen:changeSession from mainheader', listenButtonText);
+      const { windowPool } = require('../window/windowManager');
+      const headerWin = windowPool.get('header');
       try {
-        await listenService.handleListenRequest(listenButtonText);
+        const result = await listenService.handleListenRequest(listenButtonText);
+        const success = result?.started !== false;
+        if (headerWin && !headerWin.isDestroyed()) {
+          headerWin.webContents.send('listen:changeSessionResult', { success });
+        }
         return { success: true };
       } catch (error) {
         console.error('[FeatureBridge] listen:changeSession failed', error.message);
+        if (headerWin && !headerWin.isDestroyed()) {
+          headerWin.webContents.send('listen:changeSessionResult', { success: false });
+        }
         return { success: false, error: error.message };
       }
     });

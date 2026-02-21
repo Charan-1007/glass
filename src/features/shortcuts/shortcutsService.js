@@ -2,6 +2,7 @@ const { globalShortcut, screen } = require('electron');
 const shortcutsRepository = require('./repositories');
 const internalBridge = require('../../bridge/internalBridge');
 const askService = require('../ask/askService');
+const listenService = require('../listen/listenService');
 
 
 class ShortcutsService {
@@ -193,6 +194,28 @@ class ShortcutsService {
             });
         });
 
+        // ── Ctrl+Shift+L  →  Toggle listen mode ─────────────────────────────
+        globalShortcut.register(`${modifier}+Shift+L`, async () => {
+            try {
+                const isActive = listenService.isSessionActive();
+                const headerWin = this.windowPool.get('header');
+                const result = isActive
+                    ? await listenService.handleListenRequest('Stop')
+                    : await listenService.handleListenRequest('Listen');
+                // Only advance the header state machine if the action actually ran
+                const success = result?.started !== false;
+                if (headerWin && !headerWin.isDestroyed()) {
+                    headerWin.webContents.send('listen:changeSessionResult', { success });
+                }
+            } catch (err) {
+                console.error('[Shortcuts] toggleListen failed:', err.message);
+                const headerWin = this.windowPool.get('header');
+                if (headerWin && !headerWin.isDestroyed()) {
+                    headerWin.webContents.send('listen:changeSessionResult', { success: false });
+                }
+            }
+        });
+
         // --- User-configurable shortcuts ---
         if (header?.currentHeaderState === 'apikey') {
             if (keybinds.toggleVisibility) {
@@ -212,18 +235,28 @@ class ShortcutsService {
                     callback = () => {
                         const headerWindow = this.windowPool.get('header');
                         const askWindow = this.windowPool.get('ask');
+                        const listenWindow = this.windowPool.get('listen');
                         
                         if (headerWindow && !headerWindow.isDestroyed()) {
                             if (headerWindow.isVisible()) {
+                                // Remember which windows were visible before hiding
+                                this._wasAskVisible = askWindow && !askWindow.isDestroyed() && askWindow.isVisible();
+                                this._wasListenVisible = listenWindow && !listenWindow.isDestroyed() && listenWindow.isVisible();
                                 headerWindow.hide();
-                                if (askWindow && !askWindow.isDestroyed()) {
+                                if (this._wasAskVisible) {
                                     askWindow.hide();
+                                }
+                                if (this._wasListenVisible) {
+                                    listenWindow.hide();
                                 }
                             } else {
                                 // Use showInactive() to NOT steal focus
                                 headerWindow.showInactive();
-                                if (askWindow && !askWindow.isDestroyed()) {
+                                if (this._wasAskVisible && askWindow && !askWindow.isDestroyed()) {
                                     askWindow.showInactive();
+                                }
+                                if (this._wasListenVisible && listenWindow && !listenWindow.isDestroyed()) {
+                                    listenWindow.showInactive();
                                 }
                             }
                         }
@@ -262,22 +295,25 @@ case 'scrollDown':
                     break;
                 case 'toggleClickThrough':
                     callback = () => {
+                        // Determine new state from the ask window (primary)
                         const askWindow = this.windowPool.get('ask');
-                        if (askWindow && !askWindow.isDestroyed()) {
-                            const currentClickThrough = askWindow.isClickThrough || false;
-                            const newClickThrough = !currentClickThrough;
-                            
-                            if (newClickThrough) {
-                                // Enable click-through
-                                askWindow.setIgnoreMouseEvents(true, { forward: true });
-                            } else {
-                                // Disable click-through
-                                askWindow.setIgnoreMouseEvents(false);
+                        const currentClickThrough = (askWindow && !askWindow.isDestroyed()) ? (askWindow.isClickThrough || false) : false;
+                        const newClickThrough = !currentClickThrough;
+
+                        // Apply to both ask and listen windows in sync
+                        const targets = ['ask', 'listen'];
+                        for (const name of targets) {
+                            const win = this.windowPool.get(name);
+                            if (win && !win.isDestroyed()) {
+                                if (newClickThrough) {
+                                    win.setIgnoreMouseEvents(true, { forward: true });
+                                } else {
+                                    win.setIgnoreMouseEvents(false);
+                                }
+                                win.isClickThrough = newClickThrough;
                             }
-                            
-                            askWindow.isClickThrough = newClickThrough;
-                            console.log(`Click-through mode: ${newClickThrough ? 'enabled' : 'disabled'}`);
                         }
+                        console.log(`Click-through mode: ${newClickThrough ? 'enabled' : 'disabled'}`);
                     };
                     break;
                 case 'manualScreenshot':

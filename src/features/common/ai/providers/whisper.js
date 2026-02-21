@@ -30,23 +30,14 @@ class WhisperSTTSession extends EventEmitter {
         try {
             await this.whisperService.ensureModelAvailable(this.model);
             this.isRunning = true;
-            this.startProcessingLoop();
+            // Audio is accumulated in the buffer and processed all at once
+            // when close() is called (batch transcription on stop).
             return true;
         } catch (error) {
             console.error('[WhisperSTT] Initialization error:', error);
             this.emit('error', error);
             return false;
         }
-    }
-
-    startProcessingLoop() {
-        this.processingInterval = setInterval(async () => {
-            const minBufferSize = 16000 * 2 * 0.15;
-            if (this.audioBuffer.length >= minBufferSize && !this.process) {
-                console.log(`[WhisperSTT-${this.sessionId}] Processing audio chunk, buffer size: ${this.audioBuffer.length}`);
-                await this.processAudioChunk();
-            }
-        }, 1500);
     }
 
     async processAudioChunk() {
@@ -93,6 +84,11 @@ class WhisperSTTSession extends EventEmitter {
                 errorOutput += data.toString();
             });
 
+            this.process.on('error', (err) => {
+                console.error(`[WhisperSTT-${this.sessionId}] Spawn error:`, err.message);
+                this.process = null;
+            });
+
             this.process.on('close', async (code) => {
                 this.process = null;
                 
@@ -108,8 +104,10 @@ class WhisperSTTSession extends EventEmitter {
                             sessionId: this.sessionId
                         });
                     }
+                } else if (code !== 0) {
+                    console.error(`[WhisperSTT-${this.sessionId}] Process exited with code ${code}`, errorOutput || '(no error output)');
                 } else if (errorOutput) {
-                    console.error(`[WhisperSTT-${this.sessionId}] Process error:`, errorOutput);
+                    console.warn(`[WhisperSTT-${this.sessionId}] Process stderr:`, errorOutput);
                 }
 
                 await this.whisperService.cleanupTempFile(tempFile);
@@ -155,17 +153,36 @@ class WhisperSTTSession extends EventEmitter {
     }
 
     async close() {
-        console.log(`[WhisperSTT-${this.sessionId}] Closing session`);
+        console.log(`[WhisperSTT-${this.sessionId}] Closing session, buffer: ${this.audioBuffer.length} bytes`);
         this.isRunning = false;
 
-        if (this.processingInterval) {
-            clearInterval(this.processingInterval);
-            this.processingInterval = null;
+        // Process all accumulated audio in the buffer (batch transcription)
+        if (this.audioBuffer.length > 0 && !this.process) {
+            console.log(`[WhisperSTT-${this.sessionId}] Processing remaining ${this.audioBuffer.length} bytes before close`);
+            this.isRunning = true; // temporarily re-enable so processAudioChunk works
+            await this.processAudioChunk();
+            this.isRunning = false;
         }
 
+        // Wait for any in-progress whisper process to finish instead of killing it
         if (this.process) {
-            this.process.kill('SIGTERM');
-            this.process = null;
+            console.log(`[WhisperSTT-${this.sessionId}] Waiting for in-progress whisper process to finish...`);
+            await new Promise((resolve) => {
+                const timeout = setTimeout(() => {
+                    console.warn(`[WhisperSTT-${this.sessionId}] Whisper process timed out, killing`);
+                    if (this.process) {
+                        this.process.kill('SIGTERM');
+                        this.process = null;
+                    }
+                    resolve();
+                }, 15000); // 15s timeout
+
+                this.process.on('close', () => {
+                    clearTimeout(timeout);
+                    this.process = null;
+                    resolve();
+                });
+            });
         }
 
         this.removeAllListeners();

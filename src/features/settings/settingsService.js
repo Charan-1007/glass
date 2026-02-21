@@ -1,5 +1,7 @@
-const { ipcMain, BrowserWindow } = require('electron');
+const { ipcMain, BrowserWindow, dialog } = require('electron');
 const Store = require('electron-store');
+const fs = require('fs');
+const path = require('path');
 const authService = require('../common/services/authService');
 const settingsRepository = require('./repositories');
 const { getStoredApiKey, getStoredProvider, windowPool } = require('../../window/windowManager');
@@ -440,6 +442,81 @@ function notifyPresetUpdate(action, presetId, title = null) {
     windowNotificationManager.notifyRelevantWindows('presets-updated', data);
 }
 
+// ── Resume Management ───────────────────────────────────────────
+
+async function uploadResume() {
+    try {
+        const result = await dialog.showOpenDialog({
+            title: 'Select Resume PDF',
+            filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
+            properties: ['openFile'],
+        });
+
+        if (result.canceled || result.filePaths.length === 0) {
+            return { success: false, canceled: true };
+        }
+
+        const filePath = result.filePaths[0];
+        const filename = path.basename(filePath);
+        const pdfBuffer = fs.readFileSync(filePath);
+
+        // pdf-parse v2 API: use PDFParse class
+        const { PDFParse } = require('pdf-parse');
+        const parser = new PDFParse({ data: new Uint8Array(pdfBuffer) });
+        const pdfData = await parser.getText();
+        const text = (pdfData.text || '').trim();
+
+        if (!text) {
+            return { success: false, error: 'Could not extract text from PDF. The file may be image-based.' };
+        }
+
+        await settingsRepository.saveResume(text, filename);
+        // Bust the prompt builder's resume cache so AI uses the new resume
+        try { require('../common/prompts/promptBuilder').invalidateResumeCache(); } catch (_) {}
+        console.log(`[SettingsService] Resume uploaded: ${filename} (${text.length} chars)`);
+        return { success: true, filename, charCount: text.length };
+    } catch (error) {
+        console.error('[SettingsService] Error uploading resume:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+async function getResume() {
+    try {
+        const resume = await settingsRepository.getResume();
+        if (resume) {
+            return { success: true, filename: resume.filename, charCount: resume.text.length };
+        }
+        return { success: true, filename: null };
+    } catch (error) {
+        console.error('[SettingsService] Error getting resume:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+async function getResumeText() {
+    try {
+        const resume = await settingsRepository.getResume();
+        return resume ? resume.text : null;
+    } catch (error) {
+        console.error('[SettingsService] Error getting resume text:', error);
+        return null;
+    }
+}
+
+async function removeResume() {
+    try {
+        await settingsRepository.removeResume();
+        // Bust the prompt builder's resume cache
+        try { require('../common/prompts/promptBuilder').invalidateResumeCache(); } catch (_) {}
+        console.log('[SettingsService] Resume removed');
+        return { success: true };
+    } catch (error) {
+        console.error('[SettingsService] Error removing resume:', error);
+        return { success: false, error: error.message };
+    }
+}
+
 module.exports = {
     initialize,
     cleanup,
@@ -463,5 +540,10 @@ module.exports = {
     // Ollama facade
     getOllamaStatus,
     ensureOllamaReady,
-    shutdownOllama
+    shutdownOllama,
+    // Resume
+    uploadResume,
+    getResume,
+    getResumeText,
+    removeResume
 };

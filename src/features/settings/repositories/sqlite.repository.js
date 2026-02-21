@@ -135,6 +135,47 @@ function setAutoUpdate(uid, isEnabled) {
     }
 }
 
+function getResume(uid) {
+    const db = sqliteClient.getDb();
+    try {
+        const row = db.prepare('SELECT resume_text, resume_filename FROM users WHERE uid = ?').get(uid);
+        if (row && row.resume_text) {
+            return { text: row.resume_text, filename: row.resume_filename };
+        }
+        return null;
+    } catch (error) {
+        console.error('SQLite: Error getting resume:', error);
+        return null;
+    }
+}
+
+function saveResume(uid, text, filename) {
+    const db = sqliteClient.getDb();
+    try {
+        const result = db.prepare('UPDATE users SET resume_text = ?, resume_filename = ? WHERE uid = ?').run(text, filename, uid);
+        if (result.changes === 0) {
+            const now = Math.floor(Date.now() / 1000);
+            db.prepare('INSERT OR REPLACE INTO users (uid, display_name, email, created_at, resume_text, resume_filename) VALUES (?, ?, ?, ?, ?, ?)')
+              .run(uid, 'User', 'user@example.com', now, text, filename);
+        }
+        return { success: true };
+    } catch (error) {
+        console.error('SQLite: Error saving resume:', error);
+        throw error;
+    }
+}
+
+function removeResume(uid) {
+    const db = sqliteClient.getDb();
+    try {
+        db.prepare('UPDATE users SET resume_text = NULL, resume_filename = NULL WHERE uid = ?').run(uid);
+        return { success: true };
+    } catch (error) {
+        console.error('SQLite: Error removing resume:', error);
+        throw error;
+    }
+}
+
 module.exports = {
     getPresets,
     getPresetTemplates,
@@ -142,5 +183,8 @@ module.exports = {
     updatePreset,
     deletePreset,
     getAutoUpdate,
-    setAutoUpdate
+    setAutoUpdate,
+    getResume,
+    saveResume,
+    removeResume
 };

@@ -285,7 +285,7 @@ class WhisperService extends EventEmitter {
             
             // Windows에서는 .exe 확장자 필요
             const platform = this.getPlatform();
-            const whisperExecutable = platform === 'win32' ? 'whisper-whisper.exe' : 'whisper';
+            const whisperExecutable = platform === 'win32' ? 'whisper-cli.exe' : 'whisper';
             this.whisperPath = path.join(whisperDir, 'bin', whisperExecutable);
 
             await this.ensureDirectories();
@@ -509,6 +509,29 @@ class WhisperService extends EventEmitter {
         }
     }
 
+    async handleDeleteModel(modelId) {
+        try {
+            if (!this.availableModels[modelId]) {
+                return { success: false, error: `Unknown model: ${modelId}` };
+            }
+            if (!this.installState.isInitialized) {
+                await this.initialize();
+            }
+            const modelPath = await this.getModelPath(modelId);
+            await fsPromises.access(modelPath, fs.constants.F_OK);
+            await fsPromises.unlink(modelPath);
+            console.log(`[WhisperService] Deleted model: ${modelId} (${modelPath})`);
+            return { success: true };
+        } catch (error) {
+            if (error.code === 'ENOENT') {
+                console.warn(`[WhisperService] Model file not found for ${modelId}, nothing to delete.`);
+                return { success: true };
+            }
+            console.error(`[WhisperService] Failed to delete model ${modelId}:`, error);
+            return { success: false, error: error.message };
+        }
+    }
+
     async getModelPath(modelId) {
         if (!this.installState.isInitialized || !this.modelsDir) {
             throw new Error('WhisperService is not initialized. Call initialize() first.');
@@ -535,7 +558,7 @@ class WhisperService extends EventEmitter {
 
     createWavHeader(dataSize) {
         const header = Buffer.alloc(44);
-        const sampleRate = 16000;
+        const sampleRate = 24000; // Must match the capture sample rate (listenCapture.js SAMPLE_RATE)
         const numChannels = 1;
         const bitsPerSample = 16;
         
@@ -669,11 +692,27 @@ class WhisperService extends EventEmitter {
                 throw new Error('whisper.exe not found in extracted files');
             }
             
-            // 첫 번째로 찾은 whisper.exe를 목표 위치로 복사
+            // 첫 번째로 찾은 whisper executable을 목표 위치로 복사
             const sourceExecutable = whisperExecutables[0];
+            const sourceDir = path.dirname(sourceExecutable);
             const targetDir = path.dirname(this.whisperPath);
             await fsPromises.mkdir(targetDir, { recursive: true });
             await fsPromises.copyFile(sourceExecutable, this.whisperPath);
+            
+            // Also copy required DLLs from the same directory
+            try {
+                const sourceFiles = await fsPromises.readdir(sourceDir);
+                for (const file of sourceFiles) {
+                    if (file.endsWith('.dll')) {
+                        const srcDll = path.join(sourceDir, file);
+                        const dstDll = path.join(targetDir, file);
+                        await fsPromises.copyFile(srcDll, dstDll);
+                        console.log(`[WhisperService] Copied DLL: ${file}`);
+                    }
+                }
+            } catch (dllErr) {
+                console.warn('[WhisperService] Failed to copy DLLs:', dllErr.message);
+            }
             
             console.log('[WhisperService] Step 4: Verifying installation...');
             
@@ -721,8 +760,13 @@ class WhisperService extends EventEmitter {
                 if (item.isDirectory()) {
                     const subExecutables = await this.findWhisperExecutables(fullPath);
                     executables.push(...subExecutables);
-                } else if (item.isFile() && (item.name === 'whisper-whisper.exe' || item.name === 'whisper.exe' || item.name === 'main.exe')) {
-                    executables.push(fullPath);
+                } else if (item.isFile() && (item.name === 'whisper-cli.exe' || item.name === 'whisper-cli' || item.name === 'whisper-whisper.exe' || item.name === 'whisper.exe' || item.name === 'main.exe')) {
+                    // Prioritize whisper-cli (the actual working binary) over deprecated stubs
+                    if (item.name === 'whisper-cli.exe' || item.name === 'whisper-cli') {
+                        executables.unshift(fullPath); // Put at front
+                    } else {
+                        executables.push(fullPath);
+                    }
                 }
             }
         } catch (error) {

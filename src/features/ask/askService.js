@@ -412,8 +412,8 @@ class AskService {
 
             // Use the appropriate system prompt based on whether we have queued screenshots
             const systemPrompt = usingQueuedScreenshots && screenshotsToAnalyze.length > 0
-                ? getSystemPrompt('pickle_glass_screenshot_analysis', conversationHistory, false)
-                : getSystemPrompt('pickle_glass_analysis', conversationHistory, false);
+                ? await getSystemPrompt('pickle_glass_screenshot_analysis', conversationHistory, false)
+                : await getSystemPrompt('pickle_glass_analysis', conversationHistory, false);
 
             // Build user message with appropriate prompt
             let userText = userPrompt.trim();

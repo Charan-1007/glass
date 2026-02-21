@@ -1189,8 +1189,6 @@ export class AskView extends LitElement {
                 });
             }
 
-            // 스크롤을 맨 아래로
-            responseContainer.scrollTop = responseContainer.scrollHeight;
         } catch (error) {
             console.error('Error rendering streaming markdown:', error);
             // 에러 발생 시 기본 텍스트 렌더링으로 폴백

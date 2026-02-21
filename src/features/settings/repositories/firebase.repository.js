@@ -137,6 +137,51 @@ async function setAutoUpdate(uid, isEnabled) {
 
 
 
+async function getResume(uid) {
+    const userDocRef = doc(getFirestoreInstance(), 'users', uid);
+    try {
+        const userSnap = await getDoc(userDocRef);
+        if (userSnap.exists()) {
+            const data = userSnap.data();
+            if (data.resume_text) {
+                return { text: data.resume_text, filename: data.resume_filename || 'resume.pdf' };
+            }
+        }
+        return null;
+    } catch (error) {
+        console.error('Firebase: Error getting resume:', error);
+        return null;
+    }
+}
+
+async function saveResume(uid, text, filename) {
+    const userDocRef = doc(getFirestoreInstance(), 'users', uid);
+    try {
+        const userSnap = await getDoc(userDocRef);
+        if (userSnap.exists()) {
+            await updateDoc(userDocRef, { resume_text: text, resume_filename: filename });
+        }
+        return { success: true };
+    } catch (error) {
+        console.error('Firebase: Error saving resume:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+async function removeResume(uid) {
+    const userDocRef = doc(getFirestoreInstance(), 'users', uid);
+    try {
+        const userSnap = await getDoc(userDocRef);
+        if (userSnap.exists()) {
+            await updateDoc(userDocRef, { resume_text: null, resume_filename: null });
+        }
+        return { success: true };
+    } catch (error) {
+        console.error('Firebase: Error removing resume:', error);
+        return { success: false, error: error.message };
+    }
+}
+
 module.exports = {
     getPresets,
     getPresetTemplates,
@@ -145,4 +190,7 @@ module.exports = {
     deletePreset,
     getAutoUpdate,
     setAutoUpdate,
+    getResume,
+    saveResume,
+    removeResume,
 }; 

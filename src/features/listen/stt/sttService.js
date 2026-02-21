@@ -192,14 +192,6 @@ class SttService {
                     
                     if (!isNoise && finalText.length > 2) {
                         this.debounceMyCompletion(finalText);
-                        
-                        this.sendToRenderer('stt-update', {
-                            speaker: 'Me',
-                            text: finalText,
-                            isPartial: false,
-                            isFinal: true,
-                            timestamp: Date.now(),
-                        });
                     } else {
                         console.log(`[Whisper-Me] Filtered noise: "${finalText}"`);
                     }
@@ -334,14 +326,6 @@ class SttService {
                     // Only process if it's not noise, not a false positive, and has meaningful content
                     if (!isNoise && finalText.length > 2) {
                         this.debounceTheirCompletion(finalText);
-                        
-                        this.sendToRenderer('stt-update', {
-                            speaker: 'Them',
-                            text: finalText,
-                            isPartial: false,
-                            isFinal: true,
-                            timestamp: Date.now(),
-                        });
                     } else {
                         console.log(`[Whisper-Them] Filtered noise: "${finalText}"`);
                     }
@@ -462,13 +446,11 @@ class SttService {
         };
 
         // Add sessionType for Whisper to distinguish between My and Their sessions
-        const myOptions = { ...sttOptions, callbacks: mySttConfig.callbacks, sessionType: 'my' };
         const theirOptions = { ...sttOptions, callbacks: theirSttConfig.callbacks, sessionType: 'their' };
 
-        [this.mySttSession, this.theirSttSession] = await Promise.all([
-            createSTT(this.modelInfo.provider, myOptions),
-            createSTT(this.modelInfo.provider, theirOptions),
-        ]);
+        // Only create system audio ("their") session — mic recording is disabled
+        this.mySttSession = null;
+        this.theirSttSession = await createSTT(this.modelInfo.provider, theirOptions);
 
         console.log('✅ Both STT sessions initialized successfully.');
 
@@ -544,12 +526,8 @@ class SttService {
     }
 
     async sendMicAudioContent(data, mimeType) {
-        // const provider = await this.getAiProvider();
-        // const isGemini = provider === 'gemini';
-        
-        if (!this.mySttSession) {
-            throw new Error('User STT session not active');
-        }
+        // Mic recording is disabled — only system audio is captured
+        return;
 
         let modelInfo = this.modelInfo;
         if (!modelInfo) {
@@ -573,7 +551,7 @@ class SttService {
 
     async sendSystemAudioContent(data, mimeType) {
         if (!this.theirSttSession) {
-            throw new Error('Their STT session not active');
+            return; // Session already closed, ignore straggler audio
         }
 
         let modelInfo = this.modelInfo;
@@ -740,7 +718,7 @@ class SttService {
     }
 
     isSessionActive() {
-        return !!this.mySttSession && !!this.theirSttSession;
+        return !!this.theirSttSession;
     }
 
     async closeSessions() {
@@ -756,15 +734,19 @@ class SttService {
             this.sessionRenewTimeout = null;
         }
 
-        // Clear timers
+        // Flush any pending transcription text BEFORE clearing timers/sessions
+        // (modelInfo must still be set for flush to work)
         if (this.myCompletionTimer) {
             clearTimeout(this.myCompletionTimer);
             this.myCompletionTimer = null;
         }
+        this.flushMyCompletion();
+
         if (this.theirCompletionTimer) {
             clearTimeout(this.theirCompletionTimer);
             this.theirCompletionTimer = null;
         }
+        this.flushTheirCompletion();
 
         const closePromises = [];
         if (this.mySttSession) {
@@ -778,6 +760,20 @@ class SttService {
 
         await Promise.all(closePromises);
         console.log('All STT sessions closed.');
+
+        // Flush again — whisper close() may have processed remaining audio
+        // and emitted new transcription during the await above
+        if (this.myCompletionTimer) {
+            clearTimeout(this.myCompletionTimer);
+            this.myCompletionTimer = null;
+        }
+        this.flushMyCompletion();
+
+        if (this.theirCompletionTimer) {
+            clearTimeout(this.theirCompletionTimer);
+            this.theirCompletionTimer = null;
+        }
+        this.flushTheirCompletion();
 
         // Reset state
         this.myCurrentUtterance = '';

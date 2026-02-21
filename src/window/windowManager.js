@@ -458,7 +458,7 @@ function createFeatureWindows(header, namesToCreate) {
         switch (name) {
             case 'listen': {
                 const listen = new BrowserWindow({
-                    ...commonChildOptions, width:400,minWidth:400,maxWidth:900,
+                    ...commonChildOptions, width:400, height:400, minWidth:400,maxWidth:900,
                     maxHeight:900,
                 });
                 listen.setContentProtection(isContentProtectionOn);
@@ -466,6 +466,10 @@ function createFeatureWindows(header, namesToCreate) {
                 if (process.platform === 'darwin') {
                     listen.setWindowButtonVisibility(false);
                 }
+                // Initialize click-through state as enabled (synced with ask window)
+                listen.isClickThrough = true;
+                listen.setIgnoreMouseEvents(true, { forward: true });
+
                 const listenLoadOptions = { query: { view: 'listen' } };
                 if (!shouldUseLiquidGlass) {
                     listen.loadFile(path.join(__dirname, '../ui/app/content.html'), listenLoadOptions);
@@ -649,7 +653,7 @@ function getCurrentDisplay(window) {
 
 function createWindows() {
     const HEADER_HEIGHT        = 47;
-    const DEFAULT_WINDOW_WIDTH = 353;
+    const DEFAULT_WINDOW_WIDTH = 440;
 
     const primaryDisplay = screen.getPrimaryDisplay();
     const { y: workAreaY, width: screenWidth } = primaryDisplay.workArea;
